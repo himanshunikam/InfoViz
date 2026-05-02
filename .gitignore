@@ -1,0 +1,7 @@
+.venv/
+.vscode/
+*.csv
+*.pptx
+
+explore_data.ipynb
+main.py

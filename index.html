@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Germany Food Producer Prices 1991–2022</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+  <h1>Germany — Food Producer Prices</h1>
+  <p class="subtitle">Annual producer prices for selected commodities · 1991–2022 · FAOSTAT</p>
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Items shown</div>
+      <div class="stat-value" id="s-items">8</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Year span</div>
+      <div class="stat-value small" id="s-range">1991 – 2022</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Data points</div>
+      <div class="stat-value" id="s-pts">256</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Scale</div>
+      <div class="mode-wrap">
+        <button class="mbtn active" id="btn-abs" onclick="setMode('abs')">Absolute</button>
+        <button class="mbtn" id="btn-idx" onclick="setMode('idx')">Indexed</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend" id="legend" style="min-height: 18px;"></div>
+
+  <div class="chart-wrap">
+    <svg id="mainChart" role="img"
+      aria-label="Line chart of German food producer prices 1991–2022">
+    </svg>
+  </div>
+
+  <div class="range-row">
+    <span>From</span>
+    <input type="range" id="sl-start" min="0" max="31" value="0" step="1">
+    <span class="range-lbl" id="lbl-start">1991</span>
+    <span class="range-arrow">→</span>
+    <input type="range" id="sl-end" min="0" max="31" value="31" step="1">
+    <span class="range-lbl" id="lbl-end">2022</span>
+  </div>
+
+  <div class="rolling-avg-wrap">
+    <label>
+      <input type="checkbox" id="toggle-rolling-avg">
+      <span>Show rolling average</span>
+    </label>
+    <label for="rolling-window" style="margin-left: 8px;">Window (years):</label>
+    <input type="number" id="rolling-window" class="rolling-avg-window" value="3" min="2" max="10">
+  </div>
+
+  <div class="picker-wrap">
+    <div>
+      <label class="picker-label" for="food-select">Foods (Ctrl/Cmd + click for multi-select)</label>
+      <div style="display:flex; gap:8px; margin-bottom:6px; align-items:center; flex-wrap:wrap;">
+        <label class="picker-label" for="category-filter" style="margin-bottom:0;">Category</label>
+        <select id="category-filter" class="picker-filter">
+          <option value="All">All categories</option>
+        </select>
+      </div>
+      <select id="food-select" class="picker-select" multiple></select>
+    </div>
+    <div class="picker-actions">
+      <button type="button" class="picker-btn" id="btn-select-all">Select all</button>
+      <button type="button" class="picker-btn" id="btn-first-8">First 8</button>
+      <button type="button" class="picker-btn" id="btn-select-category">Select category</button>
+      <button type="button" class="picker-btn" id="btn-clear-category">Clear category</button>
+    </div>
+  </div>
+
+  <div class="pills" id="pills"></div>
+
+  <p class="footnote">
+    Values before 2002 in Deutsche Mark (DM); from 2002 in Euro (EUR) ·
+    LCU = Local Currency Unit per tonne · Source: FAOSTAT
+  </p>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

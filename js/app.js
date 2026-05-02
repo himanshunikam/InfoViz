@@ -1,0 +1,682 @@
+// ── Data source (CSV) ─────────────────────────────────────────────────────────
+const DASH_PATTERNS = [[], [6, 3], [3, 3], [8, 4], [4, 2], [5, 2, 1, 2], [2, 2], [10, 3]];
+
+let YEARS = [];
+let ITEMS = {};
+let names = [];
+let ITEM_CATEGORY = {};
+let CATEGORY_NAMES = [];
+const sel = new Set();
+let si = 0;
+let ei = 0;
+let mode = 'abs';
+let chart = null;
+let showRollingAvg = false;
+let rollingWindow = 3;
+
+const legDiv = document.getElementById('legend');
+const pillsDiv = document.getElementById('pills');
+const startSlider = document.getElementById('sl-start');
+const endSlider = document.getElementById('sl-end');
+const foodSelect = document.getElementById('food-select');
+const categoryFilter = document.getElementById('category-filter');
+const btnSelectAll = document.getElementById('btn-select-all');
+const btnFirst8 = document.getElementById('btn-first-8');
+const btnSelectCategory = document.getElementById('btn-select-category');
+const btnClearCategory = document.getElementById('btn-clear-category');
+const toggleRollingAvg = document.getElementById('toggle-rolling-avg');
+const rollingWindowInput = document.getElementById('rolling-window');
+
+const CATEGORY_ORDER = [
+  'Milk & Dairy',
+  'Meat',
+  'Vegetables',
+  'Fruits',
+  'Cereals & Grains',
+  'Pulses & Legumes',
+  'Oilseeds & Oils',
+  'Sweeteners',
+  'Other'
+];
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function colorForIndex(idx, total) {
+  const hue = Math.round((idx / Math.max(total, 1)) * 360);
+  return `hsl(${hue}, 62%, 44%)`;
+}
+
+function categorizeItem(itemName) {
+  const n = itemName.toLowerCase();
+
+  if (n.includes('milk') || n.includes('egg') || n.includes('honey')) return 'Milk & Dairy';
+  if (n.includes('meat') || n.includes('wool')) return 'Meat';
+  if (
+    n.includes('potato') || n.includes('onion') || n.includes('shallot') ||
+    n.includes('tomato') || n.includes('cabbage') || n.includes('carrot') ||
+    n.includes('turnip') || n.includes('cauliflower') || n.includes('broccoli') ||
+    n.includes('cucumber') || n.includes('gherkin') || n.includes('lettuce') ||
+    n.includes('chicory') || n.includes('leek') || n.includes('mushroom') ||
+    n.includes('truffle') || n.includes('spinach') || n.includes('asparagus') ||
+    n.includes('vegetable') || n.includes('pumpkin')
+  ) return 'Vegetables';
+  if (
+    n.includes('apple') || n.includes('pear') || n.includes('peach') ||
+    n.includes('nectarine') || n.includes('plum') || n.includes('sloe') ||
+    n.includes('cherry') || n.includes('apricot') || n.includes('strawberr') ||
+    n.includes('raspberr') || n.includes('blueberr') || n.includes('gooseberr') ||
+    n.includes('currant') || n.includes('fruit') || n.includes('walnut') ||
+    n.includes('berry')
+  ) return 'Fruits';
+  if (
+    n.includes('wheat') || n.includes('barley') || n.includes('oat') ||
+    n.includes('rye') || n.includes('maize') || n.includes('corn') || n.includes('triticale')
+  ) return 'Cereals & Grains';
+  if (
+    n.includes('bean') || n.includes('pea') || n.includes('pulse') ||
+    n.includes('lupin') || n.includes('vetch')
+  ) return 'Pulses & Legumes';
+  if (
+    n.includes('soya') || n.includes('sunflower') || n.includes('rape') ||
+    n.includes('colza') || n.includes('mustard seed') || n.includes('oil')
+  ) return 'Oilseeds & Oils';
+  if (n.includes('sugar')) return 'Sweeteners';
+  return 'Other';
+}
+
+function visibleNamesByCategory() {
+  const active = categoryFilter.value || 'All';
+  if (active === 'All') return names;
+  return names.filter(n => ITEM_CATEGORY[n] === active);
+}
+
+// ── CSV Parsing ───────────────────────────────────────────────────────────────
+function parseCsvLine(line) {
+  const out = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  out.push(current.trim());
+  return out;
+}
+
+function parseCsv(text) {
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const header = parseCsvLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].startsWith('#')) continue;
+    const cols = parseCsvLine(lines[i]);
+    if (cols.length < header.length) continue;
+    const row = {};
+    for (let c = 0; c < header.length; c++) {
+      row[header[c]] = cols[c];
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function buildSeries(rows) {
+  const annualRows = rows.filter(r =>
+    r.Months === 'Annual value' &&
+    r.Unit === 'LCU' &&
+    r.Value !== '' &&
+    Number.isFinite(Number(r.Year)) &&
+    Number.isFinite(Number(r.Value))
+  );
+
+  const years = [...new Set(annualRows.map(r => Number(r.Year)))].sort((a, b) => a - b);
+  const byItem = new Map();
+
+  annualRows.forEach(r => {
+    const item = r.Item;
+    if (!byItem.has(item)) byItem.set(item, new Map());
+    byItem.get(item).set(Number(r.Year), Number(r.Value));
+  });
+
+  const sortedNames = [...byItem.keys()].sort((a, b) => a.localeCompare(b));
+  const built = {};
+
+  sortedNames.forEach((itemName, idx) => {
+    const yearMap = byItem.get(itemName);
+    built[itemName] = {
+      color: colorForIndex(idx, sortedNames.length),
+      dash: DASH_PATTERNS[idx % DASH_PATTERNS.length],
+      values: years.map(y => yearMap.has(y) ? yearMap.get(y) : null)
+    };
+  });
+
+  return { years, items: built, names: sortedNames };
+}
+
+// ── UI Rendering ──────────────────────────────────────────────────────────────
+function renderLegend() {
+  legDiv.innerHTML = '';
+  names.filter(n => sel.has(n)).forEach(n => {
+    const span = document.createElement('span');
+    span.className = 'legend-item';
+    span.innerHTML = `<span class="legend-swatch" style="background:${ITEMS[n].color}"></span>${n}`;
+    legDiv.appendChild(span);
+  });
+}
+
+function renderPills() {
+  pillsDiv.innerHTML = '';
+  names.filter(n => sel.has(n)).forEach(n => {
+    const b = document.createElement('button');
+    b.className = 'pill';
+    b.id = 'pill-' + n;
+    b.style.border = `1.5px solid ${ITEMS[n].color}`;
+    b.style.background = ITEMS[n].color + '22';
+    b.innerHTML = `<span class="pill-dot" style="background:${ITEMS[n].color}"></span>${n}`;
+    b.onclick = () => toggle(n);
+    pillsDiv.appendChild(b);
+  });
+}
+
+function renderFoodSelect() {
+  foodSelect.innerHTML = '';
+  const visible = visibleNamesByCategory();
+  const groups = CATEGORY_ORDER.filter(c => CATEGORY_NAMES.includes(c));
+
+  groups.forEach(cat => {
+    const catNames = visible.filter(n => ITEM_CATEGORY[n] === cat);
+    if (!catNames.length) return;
+
+    const group = document.createElement('optgroup');
+    group.label = cat;
+
+    catNames.forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n;
+      opt.textContent = n;
+      opt.selected = sel.has(n);
+      group.appendChild(opt);
+    });
+
+    foodSelect.appendChild(group);
+  });
+}
+
+function syncFoodSelectSelection() {
+  const selectedSet = new Set(sel);
+  [...foodSelect.options].forEach(opt => {
+    opt.selected = selectedSet.has(opt.value);
+  });
+}
+
+function toggle(n) {
+  if (sel.has(n)) {
+    if (sel.size > 1) sel.delete(n);
+  } else {
+    sel.add(n);
+  }
+  names.forEach(nm => {
+    const pill = document.getElementById('pill-' + nm);
+    if (pill) pill.style.opacity = sel.has(nm) ? '1' : '0.28';
+  });
+  syncFoodSelectSelection();
+  renderPills();
+  refresh();
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-abs').className = 'mbtn' + (m === 'abs' ? ' active' : '');
+  document.getElementById('btn-idx').className = 'mbtn' + (m === 'idx' ? ' active' : '');
+  refresh();
+}
+
+// ── Data Processing ──────────────────────────────────────────────────────────
+function getData(n) {
+  const raw = ITEMS[n].values.slice(si, ei + 1);
+  if (mode === 'idx') {
+    const base = raw.find(v => v != null) || 1;
+    return raw.map(v => v == null ? null : Math.round(v / base * 100));
+  }
+  return raw;
+}
+
+function updateStats() {
+  document.getElementById('s-items').textContent = sel.size;
+  document.getElementById('s-range').textContent = YEARS[si] + ' – ' + YEARS[ei];
+  document.getElementById('s-pts').textContent = sel.size * (ei - si + 1);
+}
+
+function applyRollingAverage(data, window) {
+  if (window < 2) return data;
+  const result = [];
+  for (let i = 0; i < data.length; i++) {
+    const start = Math.max(0, i - Math.floor(window / 2));
+    const end = Math.min(data.length, i + Math.ceil(window / 2));
+    const slice = data.slice(start, end).filter(v => v != null);
+    if (slice.length === 0) {
+      result.push(null);
+    } else {
+      const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
+      result.push(Math.round(avg * 100) / 100);
+    }
+  }
+  return result;
+}
+
+function buildDatasets() {
+  if (showRollingAvg) {
+    const selected = names.filter(n => sel.has(n));
+    if (selected.length === 0) return [];
+
+    const allData = YEARS.map((_, yearIdx) => {
+      const values = selected
+        .map(n => ITEMS[n].values[yearIdx])
+        .filter(v => v != null);
+      return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
+    });
+
+    const sliced = allData.slice(si, ei + 1);
+    let finalData = sliced;
+
+    if (mode === 'idx') {
+      const base = sliced.find(v => v != null) || 1;
+      finalData = sliced.map(v => v == null ? null : Math.round(v / base * 100));
+    }
+
+    finalData = applyRollingAverage(finalData, rollingWindow);
+
+    return [{
+      label: `Avg (${rollingWindow}yr rolling)`,
+      data: finalData,
+      borderColor: '#333',
+      backgroundColor: 'transparent',
+      borderDash: [],
+      borderWidth: 2.5,
+      pointRadius: 0,
+      pointHoverRadius: 6,
+      tension: 0.4,
+      fill: false,
+      spanGaps: true
+    }];
+  }
+
+  return names.filter(n => sel.has(n)).map(n => ({
+    label: n,
+    data: getData(n),
+    borderColor: ITEMS[n].color,
+    backgroundColor: ITEMS[n].color + '12',
+    borderDash: ITEMS[n].dash,
+    borderWidth: 2,
+    pointRadius: 0,
+    pointHoverRadius: 5,
+    tension: 0.35,
+    fill: false,
+    spanGaps: true
+  }));
+}
+
+// ── Event Listeners ───────────────────────────────────────────────────────────
+foodSelect.addEventListener('change', function () {
+  const chosen = [...this.selectedOptions].map(o => o.value);
+  if (chosen.length === 0) {
+    syncFoodSelectSelection();
+    return;
+  }
+  sel.clear();
+  chosen.forEach(n => sel.add(n));
+  renderPills();
+  refresh();
+});
+
+categoryFilter.addEventListener('change', function () {
+  renderFoodSelect();
+  syncFoodSelectSelection();
+});
+
+toggleRollingAvg.addEventListener('change', function () {
+  showRollingAvg = this.checked;
+  refresh();
+});
+
+rollingWindowInput.addEventListener('change', function () {
+  rollingWindow = Math.max(2, Math.min(10, parseInt(this.value) || 3));
+  this.value = rollingWindow;
+  if (showRollingAvg) refresh();
+});
+
+btnSelectAll.addEventListener('click', function () {
+  sel.clear();
+  names.forEach(n => sel.add(n));
+  categoryFilter.value = 'All';
+  renderFoodSelect();
+  syncFoodSelectSelection();
+  renderPills();
+  refresh();
+});
+
+btnFirst8.addEventListener('click', function () {
+  sel.clear();
+  names.slice(0, 8).forEach(n => sel.add(n));
+  categoryFilter.value = 'All';
+  renderFoodSelect();
+  syncFoodSelectSelection();
+  renderPills();
+  refresh();
+});
+
+btnSelectCategory.addEventListener('click', function () {
+  const active = categoryFilter.value || 'All';
+  const targets = active === 'All' ? names : names.filter(n => ITEM_CATEGORY[n] === active);
+  if (!targets.length) return;
+  sel.clear();
+  targets.forEach(n => sel.add(n));
+  syncFoodSelectSelection();
+  renderPills();
+  refresh();
+});
+
+btnClearCategory.addEventListener('click', function () {
+  const active = categoryFilter.value || 'All';
+  const targets = active === 'All' ? names : names.filter(n => ITEM_CATEGORY[n] === active);
+  if (!targets.length) return;
+  if (sel.size <= targets.length) return;
+  targets.forEach(n => sel.delete(n));
+  syncFoodSelectSelection();
+  renderPills();
+  refresh();
+});
+
+startSlider.addEventListener('input', function () {
+  if (!YEARS.length) return;
+  si = Math.min(+this.value, ei - 1);
+  this.value = si;
+  document.getElementById('lbl-start').textContent = YEARS[si];
+  refresh();
+});
+
+endSlider.addEventListener('input', function () {
+  if (!YEARS.length) return;
+  ei = Math.max(+this.value, si + 1);
+  this.value = ei;
+  document.getElementById('lbl-end').textContent = YEARS[ei];
+  refresh();
+});
+
+// ── Chart Building with D3 ───────────────────────────────────────────────────
+function buildChart() {
+  const svg = d3.select('#mainChart');
+  svg.selectAll('*').remove();
+
+  const margin = { top: 20, right: 20, bottom: 40, left: 60 };
+  const containerRect = svg.node().parentElement.getBoundingClientRect();
+  const fullWidth = containerRect.width > 0 ? containerRect.width : 800;
+  const fullHeight = containerRect.height > 0 ? containerRect.height : 380;
+  const width = fullWidth - margin.left - margin.right;
+  const height = fullHeight - margin.top - margin.bottom;
+
+  svg
+    .attr('width', fullWidth)
+    .attr('height', fullHeight)
+    .style('display', 'block');
+
+  const g = svg
+    .append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const yearRange = YEARS.slice(si, ei + 1);
+  const datasets = buildDatasets();
+
+  if (datasets.length === 0) {
+    g.append('text')
+      .attr('x', width / 2)
+      .attr('y', height / 2)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#888780')
+      .text('No items selected');
+    return;
+  }
+
+  // Collect all values to determine y-scale domain
+  let allValues = [];
+  datasets.forEach(ds => {
+    ds.data.forEach(v => {
+      if (v != null) allValues.push(v);
+    });
+  });
+
+  const yMin = Math.min(...allValues) * 0.95;
+  const yMax = Math.max(...allValues) * 1.05;
+
+  const xScale = d3.scalePoint()
+    .domain(yearRange)
+    .range([0, width])
+    .padding(0.5);
+
+  const yScale = d3.scaleLinear()
+    .domain([yMin, yMax])
+    .range([height, 0]);
+
+  const line = d3.line()
+    .defined(d => d != null)
+    .x((d, i) => xScale(yearRange[i]))
+    .y(d => yScale(d));
+
+  // Draw grid
+  g.append('g')
+    .attr('class', 'd3-grid')
+    .attr('opacity', 0.1)
+    .call(d3.axisLeft(yScale)
+      .tickSize(-width)
+      .tickFormat('')
+    );
+
+  // Draw EUR line
+  const eurIdx = yearRange.indexOf(2002);
+  if (eurIdx !== -1) {
+    const eurX = xScale(2002);
+    g.append('line')
+      .attr('x1', eurX)
+      .attr('y1', 0)
+      .attr('x2', eurX)
+      .attr('y2', height)
+      .attr('stroke', 'rgba(136,135,128,0.4)')
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '4,3');
+
+    g.append('text')
+      .attr('x', eurX + 4)
+      .attr('y', 12)
+      .attr('fill', 'rgba(100,100,100,0.65)')
+      .attr('font-size', '10px')
+      .text('EUR →');
+  }
+
+  // Draw lines for each dataset
+  datasets.forEach((ds, i) => {
+    g.append('path')
+      .attr('d', line(ds.data))
+      .attr('fill', 'none')
+      .attr('stroke', ds.borderColor)
+      .attr('stroke-width', 2)
+      .attr('stroke-dasharray', ds.borderDash.length > 0 ? ds.borderDash.join(',') : 'none')
+      .attr('opacity', 0.8)
+      .attr('class', `line-${i}`)
+      .attr('data-label', ds.label);
+  });
+
+  // Draw x-axis
+  g.append('g')
+    .attr('transform', `translate(0,${height})`)
+    .call(d3.axisBottom(xScale)
+      .tickValues(yearRange.filter((y, i) => i % Math.ceil(yearRange.length / 10) === 0))
+    )
+    .attr('color', '#888780')
+    .selectAll('text')
+    .attr('font-size', '11px');
+
+  g.select('g:last-of-type .domain').remove();
+
+  const yAxisGroup = g.append('g')
+    .call(d3.axisLeft(yScale)
+      .tickFormat(d => {
+        if (mode === 'idx') return d;
+        if (showRollingAvg) return d.toFixed(0);
+        return d.toLocaleString();
+      })
+    )
+    .attr('color', '#888780');
+
+  yAxisGroup.selectAll('text')
+    .attr('font-size', '11px');
+
+  // Y-axis label
+  g.append('text')
+    .attr('transform', 'rotate(-90)')
+    .attr('y', 0 - margin.left)
+    .attr('x', 0 - (height / 2))
+    .attr('dy', '1em')
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#888780')
+    .attr('font-size', '11px')
+    .text(showRollingAvg 
+      ? `${mode === 'idx' ? 'Index' : 'Avg LCU / tonne'} (${rollingWindow}yr rolling)`
+      : (mode === 'idx' ? 'Index (base year = 100)' : 'LCU / tonne'));
+
+  // Interactive tooltip - remove old one first
+  d3.select('#d3-tooltip').remove();
+  const tooltip = d3.select('body').append('div')
+    .attr('id', 'd3-tooltip')
+    .style('position', 'absolute')
+    .style('background', 'rgba(0,0,0,0.8)')
+    .style('color', 'white')
+    .style('padding', '6px 10px')
+    .style('border-radius', '4px')
+    .style('font-size', '12px')
+    .style('pointer-events', 'none')
+    .style('display', 'none')
+    .style('z-index', '1000');
+
+  const overlay = g.append('rect')
+    .attr('width', width)
+    .attr('height', height)
+    .attr('fill', 'none')
+    .attr('pointer-events', 'auto')
+    .on('mousemove', function(event) {
+      const [mx, my] = d3.pointer(event, this);
+      const yearIdx = Math.round(xScale.invert(mx));
+      if (!yearRange.includes(yearIdx)) {
+        tooltip.style('display', 'none');
+        return;
+      }
+
+      let html = `<strong>Year ${yearIdx}</strong><br>`;
+      datasets.forEach((ds, i) => {
+        const val = ds.data[yearRange.indexOf(yearIdx)];
+        if (val != null) {
+          if (showRollingAvg) {
+            html += `${ds.label}: ${val.toFixed(1)}<br>`;
+          } else {
+            html += `${ds.label}: ${val.toLocaleString()}${mode === 'idx' ? '' : ' LCU/t'}<br>`;
+          }
+        }
+      });
+
+      tooltip
+        .html(html)
+        .style('left', (event.pageX + 10) + 'px')
+        .style('top', (event.pageY - 10) + 'px')
+        .style('display', 'block');
+    })
+    .on('mouseleave', function() {
+      tooltip.style('display', 'none');
+    });
+
+  // Store chart reference for refresh
+  chart = { svg, g, xScale, yScale, yearRange, datasets };
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
+function refresh() {
+  buildChart();
+  updateStats();
+}
+
+// ── Initialization ────────────────────────────────────────────────────────────
+async function initFromCsv() {
+  const subtitle = document.querySelector('.subtitle');
+  try {
+    const res = await fetch('producer-prices_deu.csv');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const csvText = await res.text();
+    const rows = parseCsv(csvText);
+    const built = buildSeries(rows);
+
+    YEARS = built.years;
+    ITEMS = built.items;
+    names = built.names;
+    ITEM_CATEGORY = {};
+    names.forEach(n => {
+      ITEM_CATEGORY[n] = categorizeItem(n);
+    });
+    CATEGORY_NAMES = [...new Set(names.map(n => ITEM_CATEGORY[n]))]
+      .sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
+
+    if (!YEARS.length || !names.length) {
+      throw new Error('No annual LCU data found in CSV');
+    }
+
+    sel.clear();
+    names.slice(0, 8).forEach(n => sel.add(n));
+
+    categoryFilter.innerHTML = '<option value="All">All categories</option>';
+    CATEGORY_NAMES.forEach(cat => {
+      const option = document.createElement('option');
+      option.value = cat;
+      option.textContent = cat;
+      categoryFilter.appendChild(option);
+    });
+    categoryFilter.value = 'All';
+
+    si = 0;
+    ei = YEARS.length - 1;
+
+    startSlider.min = 0;
+    startSlider.max = YEARS.length - 1;
+    startSlider.value = si;
+    endSlider.min = 0;
+    endSlider.max = YEARS.length - 1;
+    endSlider.value = ei;
+    document.getElementById('lbl-start').textContent = YEARS[si];
+    document.getElementById('lbl-end').textContent = YEARS[ei];
+
+    renderLegend();
+    renderFoodSelect();
+    renderPills();
+    buildChart();
+    setMode('abs');
+    updateStats();
+    toggleRollingAvg.checked = false;
+    showRollingAvg = false;
+    rollingWindowInput.value = rollingWindow;
+    subtitle.textContent = `Annual producer prices from producer-prices_deu.csv · ${YEARS[0]}–${YEARS[YEARS.length - 1]} · FAOSTAT`;
+  } catch (err) {
+    console.error(err);
+    subtitle.textContent = 'Could not load producer-prices_deu.csv. Run from a local web server (not file://).';
+  }
+}
+
+initFromCsv();
