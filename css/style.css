@@ -1,7 +1,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  background: #f5f4f0;
+  background: #ffffff;
   color: #1a1a18;
   min-height: 100vh;
   padding: 2rem 1rem;

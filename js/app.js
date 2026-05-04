@@ -9,7 +9,6 @@ let CATEGORY_NAMES = [];
 const sel = new Set();
 let si = 0;
 let ei = 0;
-let mode = 'abs';
 let chart = null;
 let showRollingAvg = false;
 let rollingWindow = 3;
@@ -237,21 +236,9 @@ function toggle(n) {
   refresh();
 }
 
-function setMode(m) {
-  mode = m;
-  document.getElementById('btn-abs').className = 'mbtn' + (m === 'abs' ? ' active' : '');
-  document.getElementById('btn-idx').className = 'mbtn' + (m === 'idx' ? ' active' : '');
-  refresh();
-}
-
 // ── Data Processing ──────────────────────────────────────────────────────────
 function getData(n) {
-  const raw = ITEMS[n].values.slice(si, ei + 1);
-  if (mode === 'idx') {
-    const base = raw.find(v => v != null) || 1;
-    return raw.map(v => v == null ? null : Math.round(v / base * 100));
-  }
-  return raw;
+  return ITEMS[n].values.slice(si, ei + 1);
 }
 
 function updateStats() {
@@ -290,14 +277,7 @@ function buildDatasets() {
     });
 
     const sliced = allData.slice(si, ei + 1);
-    let finalData = sliced;
-
-    if (mode === 'idx') {
-      const base = sliced.find(v => v != null) || 1;
-      finalData = sliced.map(v => v == null ? null : Math.round(v / base * 100));
-    }
-
-    finalData = applyRollingAverage(finalData, rollingWindow);
+    const finalData = applyRollingAverage(sliced, rollingWindow);
 
     return [{
       label: `Avg (${rollingWindow}yr rolling)`,
@@ -533,7 +513,6 @@ function buildChart() {
   const yAxisGroup = g.append('g')
     .call(d3.axisLeft(yScale)
       .tickFormat(d => {
-        if (mode === 'idx') return d;
         if (showRollingAvg) return d.toFixed(0);
         return d.toLocaleString();
       })
@@ -553,8 +532,8 @@ function buildChart() {
     .attr('fill', '#888780')
     .attr('font-size', '11px')
     .text(showRollingAvg 
-      ? `${mode === 'idx' ? 'Index' : 'Avg LCU / tonne'} (${rollingWindow}yr rolling)`
-      : (mode === 'idx' ? 'Index (base year = 100)' : 'LCU / tonne'));
+      ? `Avg LCU / tonne (${rollingWindow}yr rolling)`
+      : 'LCU / tonne');
 
   // Interactive tooltip - remove old one first
   d3.select('#d3-tooltip').remove();
@@ -590,7 +569,7 @@ function buildChart() {
           if (showRollingAvg) {
             html += `${ds.label}: ${val.toFixed(1)}<br>`;
           } else {
-            html += `${ds.label}: ${val.toLocaleString()}${mode === 'idx' ? '' : ' LCU/t'}<br>`;
+            html += `${ds.label}: ${val.toLocaleString()} LCU/t<br>`;
           }
         }
       });
@@ -667,7 +646,6 @@ async function initFromCsv() {
     renderFoodSelect();
     renderPills();
     buildChart();
-    setMode('abs');
     updateStats();
     toggleRollingAvg.checked = false;
     showRollingAvg = false;

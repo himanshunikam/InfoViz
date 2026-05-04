@@ -8,9 +8,8 @@
 </head>
 <body>
 <div class="container">
-  <h1>Germany — Food Producer Prices</h1>
-  <p class="subtitle">Annual producer prices for selected commodities · 1991–2022 · FAOSTAT</p>
-
+  <h1>InfoViz Konzept Demo</h1>
+  <div class="subtitle"></div>
   <div class="stat-grid">
     <div class="stat-card">
       <div class="stat-label">Items shown</div>
@@ -23,13 +22,6 @@
     <div class="stat-card">
       <div class="stat-label">Data points</div>
       <div class="stat-value" id="s-pts">256</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Scale</div>
-      <div class="mode-wrap">
-        <button class="mbtn active" id="btn-abs" onclick="setMode('abs')">Absolute</button>
-        <button class="mbtn" id="btn-idx" onclick="setMode('idx')">Indexed</button>
-      </div>
     </div>
   </div>
 
@@ -80,10 +72,7 @@
 
   <div class="pills" id="pills"></div>
 
-  <p class="footnote">
-    Values before 2002 in Deutsche Mark (DM); from 2002 in Euro (EUR) ·
-    LCU = Local Currency Unit per tonne · Source: FAOSTAT
-  </p>
+  
 </div>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
