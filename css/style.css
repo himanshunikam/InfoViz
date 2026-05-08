@@ -26,6 +26,32 @@ h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
 .stat-value { font-size: 22px; font-weight: 500; }
 .stat-value.small { font-size: 17px; }
 
+.view-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(29,158,117,0.08), rgba(29,158,117,0.03));
+}
+.view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1a1a18;
+  font-weight: 500;
+}
+.view-toggle input { cursor: pointer; accent-color: #1D9E75; }
+.view-toggle-note {
+  font-size: 12px;
+  color: #666;
+}
+
 .mode-wrap { display: flex; gap: 4px; margin-top: 6px; }
 .mbtn {
   flex: 1; font-size: 11px; padding: 4px 6px; cursor: pointer;
@@ -49,7 +75,32 @@ h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
   overflow: hidden;
 }
 
+.chart-wrap.secondary {
+  height: 280px;
+  margin-top: .15rem;
+}
+
+.chart-caption {
+  margin: 0 0 6px;
+}
+.chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a18;
+}
+.chart-note {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
+
 #mainChart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#stackedChart {
   width: 100%;
   height: 100%;
   display: block;
@@ -143,7 +194,9 @@ h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
 @media (max-width: 540px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   h1 { font-size: 18px; }
+  .view-toggle-row { flex-direction: column; align-items: flex-start; }
   .picker-wrap { grid-template-columns: 1fr; }
   .picker-actions { flex-direction: row; }
   .chart-wrap { height: 300px; }
+  .chart-wrap.secondary { height: 240px; }
 }

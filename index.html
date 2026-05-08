@@ -25,11 +25,30 @@
     </div>
   </div>
 
+  <div class="view-toggle-row">
+    <label class="view-toggle" for="toggle-3d-view">
+      <input type="checkbox" id="toggle-3d-view">
+      <span>3D view</span>
+    </label>
+    <span class="view-toggle-note">Switch the chart into a perspective rendering</span>
+  </div>
+
   <div class="legend" id="legend" style="min-height: 18px;"></div>
 
   <div class="chart-wrap">
     <svg id="mainChart" role="img"
       aria-label="Line chart of German food producer prices 1991–2022">
+    </svg>
+  </div>
+
+  <div class="chart-caption">
+    <div class="chart-title">Category price change</div>
+    <div class="chart-note">Stacked year-over-year change by category for the selected foods.</div>
+  </div>
+
+  <div class="chart-wrap secondary">
+    <svg id="stackedChart" role="img"
+      aria-label="Stacked bar chart of yearly category price changes">
     </svg>
   </div>
 

@@ -11,10 +11,12 @@ let si = 0;
 let ei = 0;
 let chart = null;
 let showRollingAvg = false;
+let show3DView = false;
 let rollingWindow = 3;
 
 const legDiv = document.getElementById('legend');
 const pillsDiv = document.getElementById('pills');
+const toggle3DView = document.getElementById('toggle-3d-view');
 const startSlider = document.getElementById('sl-start');
 const endSlider = document.getElementById('sl-end');
 const foodSelect = document.getElementById('food-select');
@@ -86,6 +88,22 @@ function visibleNamesByCategory() {
   const active = categoryFilter.value || 'All';
   if (active === 'All') return names;
   return names.filter(n => ITEM_CATEGORY[n] === active);
+}
+
+function nearestYearForPointer(mx, yearRange, xScale) {
+  let nearest = yearRange[0];
+  let nearestDistance = Infinity;
+
+  yearRange.forEach(year => {
+    const position = xScale(year);
+    const distance = Math.abs(position - mx);
+    if (distance < nearestDistance) {
+      nearest = year;
+      nearestDistance = distance;
+    }
+  });
+
+  return nearest;
 }
 
 // ── CSV Parsing ───────────────────────────────────────────────────────────────
@@ -309,6 +327,462 @@ function buildDatasets() {
   }));
 }
 
+function averageForCategoryYear(category, yearIdx, selectedNames) {
+  const values = selectedNames
+    .filter(name => ITEM_CATEGORY[name] === category)
+    .map(name => ITEMS[name].values[yearIdx])
+    .filter(value => value != null);
+
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function nearestBandYear(mx, yearRange, xScale) {
+  let nearest = yearRange[0];
+  let nearestDistance = Infinity;
+
+  yearRange.forEach(year => {
+    const bandX = xScale(String(year));
+    if (bandX == null) return;
+    const distance = Math.abs((bandX + (xScale.bandwidth() / 2)) - mx);
+    if (distance < nearestDistance) {
+      nearest = year;
+      nearestDistance = distance;
+    }
+  });
+
+  return nearest;
+}
+
+function buildCategoryChangeData(yearRange) {
+  const selectedNames = names.filter(name => sel.has(name));
+  const categories = CATEGORY_ORDER.filter(category =>
+    selectedNames.some(name => ITEM_CATEGORY[name] === category)
+  );
+
+  if (selectedNames.length === 0 || categories.length === 0 || yearRange.length < 2) {
+    return { categories: [], rows: [] };
+  }
+
+  const annualCategoryValues = yearRange.map((year, idx) => {
+    const yearIdx = si + idx;
+    const row = { year };
+
+    categories.forEach(category => {
+      const avg = averageForCategoryYear(category, yearIdx, selectedNames);
+      row[category] = avg == null ? 0 : avg;
+    });
+
+    return row;
+  });
+
+  const rows = annualCategoryValues.map((row, idx) => {
+    const nextRow = { year: row.year };
+    categories.forEach(category => {
+      const currentValue = annualCategoryValues[idx][category] ?? 0;
+      const previousValue = idx > 0 ? (annualCategoryValues[idx - 1][category] ?? 0) : 0;
+      nextRow[category] = idx === 0 ? 0 : currentValue - previousValue;
+    });
+    return nextRow;
+  });
+
+  return { categories, rows };
+}
+
+function buildChart3D(svg, fullWidth, fullHeight, margin, width, height, yearRange, datasets) {
+  svg.selectAll('*').remove();
+
+  svg
+    .attr('width', fullWidth)
+    .attr('height', fullHeight)
+    .style('display', 'block');
+
+  const g = svg
+    .append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  if (datasets.length === 0) {
+    g.append('text')
+      .attr('x', width / 2)
+      .attr('y', height / 2)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#888780')
+      .text('No items selected');
+    return;
+  }
+
+  let allValues = [];
+  datasets.forEach(ds => {
+    ds.data.forEach(v => {
+      if (v != null) allValues.push(v);
+    });
+  });
+
+  const yMin = Math.min(...allValues) * 0.95;
+  const yMax = Math.max(...allValues) * 1.05;
+  const maxDepth = Math.max(datasets.length - 1, 0);
+  const depthX = Math.max(12, Math.round(width * 0.02));
+  const depthY = Math.max(8, Math.round(height * 0.015));
+  const plotWidth = Math.max(12, width - (depthX * maxDepth));
+  const plotHeight = Math.max(12, height - (depthY * maxDepth));
+  const baseYOffset = depthY * maxDepth;
+
+  const xScale = d3.scalePoint()
+    .domain(yearRange)
+    .range([0, plotWidth])
+    .padding(0.5);
+
+  const yScale = d3.scaleLinear()
+    .domain([yMin, yMax])
+    .range([plotHeight, 0]);
+
+  const projectPoint = (year, value, depth) => ({
+    x: xScale(year) + (depth * depthX),
+    y: baseYOffset + yScale(value) - (depth * depthY)
+  });
+
+  const frontTopLeft = [0, baseYOffset];
+  const frontTopRight = [plotWidth, baseYOffset];
+  const frontBottomLeft = [0, baseYOffset + plotHeight];
+  const frontBottomRight = [plotWidth, baseYOffset + plotHeight];
+  const backTopLeft = [maxDepth * depthX, 0];
+  const backTopRight = [plotWidth + (maxDepth * depthX), 0];
+  const backBottomRight = [plotWidth + (maxDepth * depthX), plotHeight];
+
+  g.append('polygon')
+    .attr('points', `${frontTopLeft[0]},${frontTopLeft[1]} ${frontTopRight[0]},${frontTopRight[1]} ${backTopRight[0]},${backTopRight[1]} ${backTopLeft[0]},${backTopLeft[1]}`)
+    .attr('fill', 'rgba(29,158,117,0.05)');
+
+  g.append('polygon')
+    .attr('points', `${frontTopRight[0]},${frontTopRight[1]} ${backTopRight[0]},${backTopRight[1]} ${backBottomRight[0]},${backBottomRight[1]} ${frontBottomRight[0]},${frontBottomRight[1]}`)
+    .attr('fill', 'rgba(0,0,0,0.03)');
+
+  g.append('polygon')
+    .attr('points', `${frontTopLeft[0]},${frontTopLeft[1]} ${frontTopRight[0]},${frontTopRight[1]} ${frontBottomRight[0]},${frontBottomRight[1]} ${frontBottomLeft[0]},${frontBottomLeft[1]}`)
+    .attr('fill', 'rgba(255,255,255,0.55)')
+    .attr('stroke', 'rgba(0,0,0,0.08)');
+
+  const gridTicks = yScale.ticks(5);
+  g.append('g')
+    .selectAll('line')
+    .data(gridTicks)
+    .enter()
+    .append('line')
+    .attr('x1', 0)
+    .attr('y1', d => yScale(d) + baseYOffset)
+    .attr('x2', plotWidth)
+    .attr('y2', d => yScale(d) + baseYOffset)
+    .attr('stroke', 'rgba(136,135,128,0.13)')
+    .attr('stroke-width', 0.7);
+
+  const yAxisGroup = g.append('g')
+    .call(d3.axisLeft(yScale)
+      .tickFormat(d => {
+        if (showRollingAvg) return d.toFixed(0);
+        return d.toLocaleString();
+      })
+    )
+    .attr('color', '#888780');
+
+  yAxisGroup.selectAll('text')
+    .attr('font-size', '11px');
+
+  g.append('g')
+    .attr('transform', `translate(0,${baseYOffset + plotHeight})`)
+    .call(d3.axisBottom(xScale)
+      .tickValues(yearRange.filter((y, i) => i % Math.ceil(yearRange.length / 10) === 0))
+    )
+    .attr('color', '#888780')
+    .selectAll('text')
+    .attr('font-size', '11px');
+
+  g.select('g:last-of-type .domain').remove();
+
+  const area = d3.area()
+    .defined(d => d != null)
+    .x(d => d.x)
+    .y0(d => d.baseY)
+    .y1(d => d.y);
+
+  const line = d3.line()
+    .defined(d => d != null)
+    .x(d => d.x)
+    .y(d => d.y);
+
+  datasets.forEach((ds, depth) => {
+    const projected = yearRange.map((year, index) => {
+      const value = ds.data[index];
+      if (value == null) return null;
+      const point = projectPoint(year, value, depth);
+      return {
+        ...point,
+        baseY: baseYOffset + plotHeight - (depth * depthY)
+      };
+    });
+
+    const shadow = projected.map(point => point ? ({
+      x: point.x + 3,
+      y: point.y + 3,
+      baseY: point.baseY + 3
+    }) : null);
+
+    g.append('path')
+      .attr('d', area(shadow))
+      .attr('fill', 'rgba(0,0,0,0.12)')
+      .attr('opacity', 0.22);
+
+    g.append('path')
+      .attr('d', area(projected))
+      .attr('fill', ds.borderColor)
+      .attr('fill-opacity', 0.18);
+
+    g.append('path')
+      .attr('d', line(projected))
+      .attr('fill', 'none')
+      .attr('stroke', ds.borderColor)
+      .attr('stroke-width', 2.4)
+      .attr('stroke-dasharray', ds.borderDash.length > 0 ? ds.borderDash.join(',') : 'none')
+      .attr('opacity', 0.92);
+  });
+
+  g.append('text')
+    .attr('transform', 'rotate(-90)')
+    .attr('y', 0 - margin.left)
+    .attr('x', 0 - (height / 2))
+    .attr('dy', '1em')
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#888780')
+    .attr('font-size', '11px')
+    .text(showRollingAvg
+      ? `Avg LCU / tonne (${rollingWindow}yr rolling)`
+      : 'LCU / tonne');
+
+  d3.select('#d3-tooltip').remove();
+  const tooltip = d3.select('body').append('div')
+    .attr('id', 'd3-tooltip')
+    .style('position', 'absolute')
+    .style('background', 'rgba(0,0,0,0.8)')
+    .style('color', 'white')
+    .style('padding', '6px 10px')
+    .style('border-radius', '4px')
+    .style('font-size', '12px')
+    .style('pointer-events', 'none')
+    .style('display', 'none')
+    .style('z-index', '1000');
+
+  const overlay = g.append('rect')
+    .attr('width', plotWidth)
+    .attr('height', plotHeight)
+    .attr('fill', 'none')
+    .attr('pointer-events', 'auto')
+    .attr('transform', `translate(0,${baseYOffset})`)
+    .on('mousemove', function(event) {
+      const [mx] = d3.pointer(event, this);
+      const yearIdx = nearestYearForPointer(mx, yearRange, xScale);
+      if (!yearRange.includes(yearIdx)) {
+        tooltip.style('display', 'none');
+        return;
+      }
+
+      let html = `<strong>Year ${yearIdx}</strong><br>`;
+      datasets.forEach(ds => {
+        const val = ds.data[yearRange.indexOf(yearIdx)];
+        if (val != null) {
+          if (showRollingAvg) {
+            html += `${ds.label}: ${val.toFixed(1)}<br>`;
+          } else {
+            html += `${ds.label}: ${val.toLocaleString()} LCU/t<br>`;
+          }
+        }
+      });
+
+      tooltip
+        .html(html)
+        .style('left', (event.pageX + 10) + 'px')
+        .style('top', (event.pageY - 10) + 'px')
+        .style('display', 'block');
+    })
+    .on('mouseleave', function() {
+      tooltip.style('display', 'none');
+    });
+
+  chart = { svg, g, xScale, yScale, yearRange, datasets };
+}
+
+function buildStackedCategoryChart() {
+  const svg = d3.select('#stackedChart');
+  svg.selectAll('*').remove();
+
+  const margin = { top: 18, right: 16, bottom: 38, left: 60 };
+  const containerRect = svg.node().parentElement.getBoundingClientRect();
+  const fullWidth = containerRect.width > 0 ? containerRect.width : 800;
+  const fullHeight = containerRect.height > 0 ? containerRect.height : 280;
+  const width = fullWidth - margin.left - margin.right;
+  const height = fullHeight - margin.top - margin.bottom;
+
+  svg
+    .attr('width', fullWidth)
+    .attr('height', fullHeight)
+    .style('display', 'block');
+
+  const g = svg
+    .append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const yearRange = YEARS.slice(si, ei + 1);
+  const { categories, rows } = buildCategoryChangeData(yearRange);
+
+  if (rows.length === 0 || categories.length === 0) {
+    g.append('text')
+      .attr('x', width / 2)
+      .attr('y', height / 2)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#888780')
+      .text('No category change data for the current selection');
+    return;
+  }
+
+  const xScale = d3.scaleBand()
+    .domain(yearRange.map(String))
+    .range([0, width])
+    .padding(0.18);
+
+  const stack = d3.stack()
+    .keys(categories)
+    .offset(d3.stackOffsetDiverging);
+
+  const stackedSeries = stack(rows);
+
+  let yMin = 0;
+  let yMax = 0;
+  stackedSeries.forEach(series => {
+    series.forEach(point => {
+      yMin = Math.min(yMin, point[0], point[1]);
+      yMax = Math.max(yMax, point[0], point[1]);
+    });
+  });
+
+  const yScale = d3.scaleLinear()
+    .domain([yMin * 1.08, yMax * 1.08])
+    .nice()
+    .range([height, 0]);
+
+  g.append('g')
+    .attr('class', 'd3-grid')
+    .attr('opacity', 0.1)
+    .call(d3.axisLeft(yScale)
+      .tickSize(-width)
+      .tickFormat('')
+    );
+
+  g.append('line')
+    .attr('x1', 0)
+    .attr('x2', width)
+    .attr('y1', yScale(0))
+    .attr('y2', yScale(0))
+    .attr('stroke', 'rgba(0,0,0,0.35)')
+    .attr('stroke-width', 1);
+
+  const categoryColors = d3.scaleOrdinal()
+    .domain(CATEGORY_ORDER)
+    .range(CATEGORY_ORDER.map((_, idx) => colorForIndex(idx, CATEGORY_ORDER.length)));
+
+  const seriesGroups = g.selectAll('.stack-layer')
+    .data(stackedSeries)
+    .enter()
+    .append('g')
+    .attr('class', 'stack-layer')
+    .attr('fill', d => categoryColors(d.key));
+
+  seriesGroups.selectAll('rect')
+    .data(d => d)
+    .enter()
+    .append('rect')
+    .attr('x', d => xScale(String(d.data.year)))
+    .attr('y', d => yScale(Math.max(d[0], d[1])))
+    .attr('width', xScale.bandwidth())
+    .attr('height', d => Math.max(1, Math.abs(yScale(d[0]) - yScale(d[1]))))
+    .attr('rx', 2)
+    .attr('ry', 2)
+    .attr('opacity', 0.9);
+
+  const tickStep = Math.ceil(yearRange.length / 10);
+  g.append('g')
+    .attr('transform', `translate(0,${height})`)
+    .call(d3.axisBottom(xScale)
+      .tickValues(yearRange.filter((year, index) => index % tickStep === 0).map(String))
+    )
+    .attr('color', '#888780')
+    .selectAll('text')
+    .attr('font-size', '11px');
+
+  g.select('g:last-of-type .domain').remove();
+
+  g.append('g')
+    .call(d3.axisLeft(yScale)
+      .tickFormat(d => `${d >= 0 ? '+' : ''}${d.toLocaleString()}`)
+    )
+    .attr('color', '#888780')
+    .selectAll('text')
+    .attr('font-size', '11px');
+
+  g.append('text')
+    .attr('transform', 'rotate(-90)')
+    .attr('y', 0 - margin.left)
+    .attr('x', 0 - (height / 2))
+    .attr('dy', '1em')
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#888780')
+    .attr('font-size', '11px')
+    .text('Year-over-year change in LCU / tonne');
+
+  d3.select('#stacked-tooltip').remove();
+  const tooltip = d3.select('body').append('div')
+    .attr('id', 'stacked-tooltip')
+    .style('position', 'absolute')
+    .style('background', 'rgba(0,0,0,0.84)')
+    .style('color', 'white')
+    .style('padding', '6px 10px')
+    .style('border-radius', '4px')
+    .style('font-size', '12px')
+    .style('pointer-events', 'none')
+    .style('display', 'none')
+    .style('z-index', '1000');
+
+  const overlay = g.append('rect')
+    .attr('width', width)
+    .attr('height', height)
+    .attr('fill', 'none')
+    .attr('pointer-events', 'all')
+    .on('mousemove', function(event) {
+      const [mx] = d3.pointer(event, this);
+      const yearIdx = nearestBandYear(mx, yearRange, xScale);
+      const row = rows[yearRange.indexOf(yearIdx)];
+      if (!row) {
+        tooltip.style('display', 'none');
+        return;
+      }
+
+      const totalChange = categories.reduce((sum, category) => sum + (row[category] || 0), 0);
+      let html = `<strong>Year ${yearIdx}</strong><br>Total change: ${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}<br>`;
+      categories.forEach(category => {
+        const value = row[category] || 0;
+        html += `${category}: ${value >= 0 ? '+' : ''}${value.toFixed(1)}<br>`;
+      });
+
+      tooltip
+        .html(html)
+        .style('left', (event.pageX + 10) + 'px')
+        .style('top', (event.pageY - 10) + 'px')
+        .style('display', 'block');
+    })
+    .on('mouseleave', function() {
+      tooltip.style('display', 'none');
+    });
+
+  chart = { svg, g, xScale, yScale, yearRange, rows, categories };
+}
+
 // ── Event Listeners ───────────────────────────────────────────────────────────
 foodSelect.addEventListener('change', function () {
   const chosen = [...this.selectedOptions].map(o => o.value);
@@ -329,6 +803,11 @@ categoryFilter.addEventListener('change', function () {
 
 toggleRollingAvg.addEventListener('change', function () {
   showRollingAvg = this.checked;
+  refresh();
+});
+
+toggle3DView.addEventListener('change', function () {
+  show3DView = this.checked;
   refresh();
 });
 
@@ -419,6 +898,11 @@ function buildChart() {
 
   const yearRange = YEARS.slice(si, ei + 1);
   const datasets = buildDatasets();
+
+  if (show3DView) {
+    buildChart3D(svg, fullWidth, fullHeight, margin, width, height, yearRange, datasets);
+    return;
+  }
 
   if (datasets.length === 0) {
     g.append('text')
@@ -556,7 +1040,7 @@ function buildChart() {
     .attr('pointer-events', 'auto')
     .on('mousemove', function(event) {
       const [mx, my] = d3.pointer(event, this);
-      const yearIdx = Math.round(xScale.invert(mx));
+      const yearIdx = nearestYearForPointer(mx, yearRange, xScale);
       if (!yearRange.includes(yearIdx)) {
         tooltip.style('display', 'none');
         return;
@@ -591,6 +1075,7 @@ function buildChart() {
 // ── Refresh ───────────────────────────────────────────────────────────────────
 function refresh() {
   buildChart();
+  buildStackedCategoryChart();
   updateStats();
 }
 
@@ -645,8 +1130,7 @@ async function initFromCsv() {
     renderLegend();
     renderFoodSelect();
     renderPills();
-    buildChart();
-    updateStats();
+    refresh();
     toggleRollingAvg.checked = false;
     showRollingAvg = false;
     rollingWindowInput.value = rollingWindow;
