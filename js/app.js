@@ -13,7 +13,9 @@ let chart = null;
 let showRollingAvg = false;
 let show3DView = false;
 let rollingWindow = 3;
+let showBasketMode = false;
 
+const baset = new Set();
 const legDiv = document.getElementById('legend');
 const pillsDiv = document.getElementById('pills');
 const toggle3DView = document.getElementById('toggle-3d-view');
@@ -312,7 +314,7 @@ function buildDatasets() {
     }];
   }
 
-  return names.filter(n => sel.has(n)).map(n => ({
+  const lines = names.filter(n => sel.has(n)).map(n => ({
     label: n,
     data: getData(n),
     borderColor: ITEMS[n].color,
@@ -325,6 +327,12 @@ function buildDatasets() {
     fill: false,
     spanGaps: true
   }));
+
+  const basketline = foodBasket();
+
+  if (basketline) lines.push(basketline);
+
+  return lines;
 }
 
 function averageForCategoryYear(category, yearIdx, selectedNames) {
@@ -782,7 +790,41 @@ function buildStackedCategoryChart() {
 
   chart = { svg, g, xScale, yScale, yearRange, rows, categories };
 }
+function buildBasketData(){
+  
+  const yearIndices = [];
+  for (let i = si; i <= ei; i++){
+    yearIndices.push(i)
+  }
 
+  return yearIndices.map(yearIndex => {
+    const selectedItems = [...sel];
+    const prices = selectedItems.map( name => ITEMS[name].values[yearIndex]).filter(price => price !== null)
+    if (prices.length === 0) return null;
+    return prices.reduce((sum, p) => sum + p, 0);
+  })
+
+}
+
+function foodBasket(){
+  if (!showBasketMode) return null;
+
+  const data = buildBasketData();
+
+  return {
+    label : 'Basket Total',
+    data : data,
+    borderColor : '#e05c00',
+    backgroundColor:'transparent',
+    borderDash : [],
+    borderWidth: 3,
+    pointRadius: 0,
+    pointHoverRadius: 6,
+    tension : 0.35,
+    fill: false,
+    spanGaps: true
+  }
+}
 // ── Event Listeners ───────────────────────────────────────────────────────────
 foodSelect.addEventListener('change', function () {
   const chosen = [...this.selectedOptions].map(o => o.value);
@@ -1126,7 +1168,10 @@ async function initFromCsv() {
     endSlider.value = ei;
     document.getElementById('lbl-start').textContent = YEARS[si];
     document.getElementById('lbl-end').textContent = YEARS[ei];
-
+    document.getElementById('toggle-basket').addEventListener('change', function() {
+      showBasketMode = this.checked;
+      refresh();   // redraw everything
+});
     renderLegend();
     renderFoodSelect();
     renderPills();
@@ -1140,5 +1185,253 @@ async function initFromCsv() {
     subtitle.textContent = 'Could not load producer-prices_deu.csv. Run from a local web server (not file://).';
   }
 }
+
+// ── AR Feature ────────────────────────────────────────────────────────────────
+//
+// How it works:
+//   1. User clicks "View in AR"
+//   2. We check if the browser supports WebXR immersive-ar (Android Chrome only)
+//   3. If yes → real WebXR session (camera managed by the browser itself)
+//   4. If no  → we ask for camera permission ourselves via getUserMedia,
+//               show the feed in a <video>, and draw the chart on a <canvas>
+//              layered on top. Visually identical to AR.
+
+let arStream = null;   // holds the camera MediaStream so we can stop it later
+let arAnimId = null;   // holds the requestAnimationFrame id so we can cancel it
+let xrSession = null;  // holds the WebXR session if we managed to start one
+
+// Entry point — called when user clicks the AR button
+async function startAR() {
+  // navigator.xr exists only in browsers that understand WebXR at all
+  if (navigator.xr) {
+    try {
+      // isSessionSupported asks "can this browser do immersive-ar right now?"
+      const arSupported = await navigator.xr.isSessionSupported('immersive-ar');
+      if (arSupported) {
+        await startWebXRAR();
+        return;
+      }
+    } catch (e) {
+      // Some browsers expose navigator.xr but throw on this call — treat as unsupported
+    }
+  }
+  // Fallback: do it ourselves with getUserMedia
+  await startCameraAR();
+}
+
+// ── Path A: camera-overlay AR (works everywhere) ──────────────────────────────
+async function startCameraAR() {
+  const overlay = document.getElementById('ar-overlay');
+  const video   = document.getElementById('ar-video');
+  const canvas  = document.getElementById('ar-canvas');
+
+  try {
+    // getUserMedia returns a Promise — "await" pauses here until the user
+    // either grants or denies camera access.
+    // facingMode:'environment' = back camera on phones, any camera on desktop
+    arStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+
+    // Plug the camera stream into the <video> element
+    video.srcObject = arStream;
+    overlay.style.display = 'block';
+
+    // The video isn't ready instantly — we wait for 'loadedmetadata' before
+    // we know its real pixel dimensions, then size our canvas to match.
+    video.addEventListener('loadedmetadata', function onReady() {
+      video.removeEventListener('loadedmetadata', onReady); // clean up listener
+      canvas.width  = video.videoWidth  || window.innerWidth;
+      canvas.height = video.videoHeight || window.innerHeight;
+      drawARLoop(); // start drawing
+    });
+
+  } catch (err) {
+    alert(
+      'Could not access the camera.\n\n' +
+      'Make sure you click "Allow" when the browser asks for camera permission.\n\n' +
+      'Error: ' + err.message
+    );
+  }
+}
+
+// ── Path B: real WebXR AR (Android Chrome with AR hardware support) ───────────
+async function startWebXRAR() {
+  const overlay = document.getElementById('ar-overlay');
+  const canvas  = document.getElementById('ar-canvas');
+
+  overlay.style.display = 'block';
+
+  try {
+    // 'dom-overlay' lets us show regular HTML on top of the camera feed.
+    // Without it we'd have to render everything in WebGL — much harder.
+    xrSession = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['dom-overlay'],
+      domOverlay: { root: overlay }
+    });
+
+    // WebXR always needs a WebGL context to manage its frame rendering,
+    // even if we're not drawing 3D objects ourselves.
+    const gl = canvas.getContext('webgl', { xrCompatible: true });
+    await gl.makeXRCompatible();
+
+    const xrLayer = new XRWebGLLayer(xrSession, gl);
+    xrSession.updateRenderState({ baseLayer: xrLayer });
+
+    const refSpace = await xrSession.requestReferenceSpace('local');
+
+    // This is the XR render loop. XR has its OWN requestAnimationFrame.
+    // Each frame: clear the GL buffer (camera feed fills it automatically).
+    function onXRFrame(time, frame) {
+      xrSession.requestAnimationFrame(onXRFrame);
+      const pose = frame.getViewerPose(refSpace);
+      if (pose) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, xrLayer.framebuffer);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      }
+    }
+    xrSession.requestAnimationFrame(onXRFrame);
+    xrSession.addEventListener('end', stopAR);
+
+    // Size canvas and start drawing our chart (shown via dom-overlay)
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    drawARLoop();
+
+  } catch (err) {
+    console.error('WebXR session failed:', err);
+    overlay.style.display = 'none';
+    // If WebXR setup fails mid-way, fall back to camera approach
+    await startCameraAR();
+  }
+}
+
+// ── Chart drawing on canvas ───────────────────────────────────────────────────
+// requestAnimationFrame calls this ~60 times/second. Each call:
+//   1. Clears the canvas (transparent → camera shows through)
+//   2. Redraws the chart with the latest data
+function drawARLoop() {
+  const canvas = document.getElementById('ar-canvas');
+  if (!canvas || canvas.style.display === 'none') return;
+
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Clear to fully transparent — the video behind shows through
+  ctx.clearRect(0, 0, W, H);
+
+  const selected = names.filter(n => sel.has(n));
+
+  // Get each selected item's price for the currently selected end-year
+  const data = selected
+    .map(name => ({ name, value: ITEMS[name].values[ei], color: ITEMS[name].color }))
+    .filter(d => d.value != null);
+
+  if (data.length > 0) {
+    drawARBarChart(ctx, W, H, data);
+  }
+
+  // Schedule ourselves to run again next frame
+  arAnimId = requestAnimationFrame(drawARLoop);
+}
+
+// Draws a horizontal bar chart centred on the canvas
+function drawARBarChart(ctx, W, H, data) {
+  // Panel size: centred, max 640 px wide, tall enough for the bars
+  const rowH    = 38;
+  const headerH = 62;
+  const padX    = Math.max(24, W * 0.05);
+  const panelW  = Math.min(W * 0.92, 640);
+  const panelH  = headerH + data.length * rowH + 16;
+  const panelX  = (W - panelW) / 2;
+  const panelY  = (H - panelH) / 2;
+
+  // ── Semi-transparent dark background panel ────────────────────────────────
+  ctx.fillStyle = 'rgba(8, 8, 18, 0.82)';
+  arRoundRect(ctx, panelX, panelY, panelW, panelH, 14);
+  ctx.fill();
+
+  // Thin border
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  arRoundRect(ctx, panelX, panelY, panelW, panelH, 14);
+  ctx.stroke();
+
+  // ── Header text ───────────────────────────────────────────────────────────
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = `bold 16px system-ui, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.fillText(`Food Producer Prices · ${YEARS[ei]}`, panelX + padX, panelY + 26);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.42)';
+  ctx.font = `12px system-ui, sans-serif`;
+  ctx.fillText('LCU / tonne · Germany · FAOSTAT', panelX + padX, panelY + 46);
+
+  // ── Horizontal bar chart ──────────────────────────────────────────────────
+  const barMaxW = panelW * 0.48;   // bars occupy left 48% of panel
+  const barX    = panelX + padX;
+  const maxVal  = Math.max(...data.map(d => d.value));
+
+  data.forEach((d, i) => {
+    const rowY  = panelY + headerH + i * rowH;
+    const barW  = (d.value / maxVal) * barMaxW;
+    const barH2 = rowH * 0.52;
+    const barY  = rowY + (rowH - barH2) / 2;
+
+    // Grey track (shows full 100% extent of the bar)
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillRect(barX, barY, barMaxW, barH2);
+
+    // Coloured bar (proportional to value)
+    ctx.fillStyle = d.color;
+    ctx.globalAlpha = 0.88;
+    ctx.fillRect(barX, barY, barW, barH2);
+    ctx.globalAlpha = 1;
+
+    // Value label inside bar (only if bar is wide enough to fit text)
+    if (barW > 50) {
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.font = `11px system-ui, sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.fillText(d.value.toLocaleString(), barX + barW - 5, barY + barH2 * 0.72);
+    }
+
+    // Item name to the right of the bar track
+    const nameX = barX + barMaxW + 10;
+    let label = d.name.length > 22 ? d.name.slice(0, 20) + '…' : d.name;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = `12px system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText(label, nameX, barY + barH2 * 0.72);
+  });
+}
+
+// Helper: builds a rounded-rectangle path (ctx.fill() or ctx.stroke() after calling)
+function arRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y,     x + w, y + r,     r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x,     y + h, x, y + h - r,     r);
+  ctx.lineTo(x,     y + r);
+  ctx.arcTo(x,     y,     x + r, y,         r);
+  ctx.closePath();
+}
+
+// ── Cleanup: stop everything when user exits AR ───────────────────────────────
+function stopAR() {
+  if (arAnimId) { cancelAnimationFrame(arAnimId); arAnimId = null; }
+  if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
+  if (xrSession) { xrSession.end().catch(() => {}); xrSession = null; }
+  const overlay = document.getElementById('ar-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+document.getElementById('btn-ar').addEventListener('click', startAR);
+document.getElementById('ar-close').addEventListener('click', stopAR);
 
 initFromCsv();

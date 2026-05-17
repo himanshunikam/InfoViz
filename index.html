@@ -24,7 +24,11 @@
       <div class="stat-value" id="s-pts">256</div>
     </div>
   </div>
-
+  <div>
+    <label>
+      <input type="checkbox" id="toggle-basket"> Basket Mode
+    </label>
+  </div>
   <div class="view-toggle-row">
     <label class="view-toggle" for="toggle-3d-view">
       <input type="checkbox" id="toggle-3d-view">
@@ -91,7 +95,22 @@
 
   <div class="pills" id="pills"></div>
 
-  
+  <div class="ar-row">
+    <button type="button" id="btn-ar" class="ar-btn">View in AR</button>
+    <span class="ar-note" id="ar-note">Opens your camera with a price chart overlay</span>
+  </div>
+</div>
+
+<!-- Full-screen AR overlay: sits on top of everything when active -->
+<div id="ar-overlay" class="ar-overlay" style="display:none;">
+  <!-- The live camera feed plays here as a background -->
+  <video id="ar-video" autoplay playsinline muted></video>
+  <!-- We draw our chart on this transparent canvas, layered over the video -->
+  <canvas id="ar-canvas"></canvas>
+  <div class="ar-hud">
+    <span class="ar-label-badge">AR · Food Prices</span>
+    <button type="button" id="ar-close" class="ar-close-btn">Exit AR</button>
+  </div>
 </div>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>

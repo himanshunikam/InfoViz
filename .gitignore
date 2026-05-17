@@ -2,6 +2,7 @@
 .vscode/
 *.csv
 *.pptx
+*.pdf
 
 explore_data.ipynb
 main.py
