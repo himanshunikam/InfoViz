@@ -1,13 +1,12 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  background: #ffffff;
+  background: #f0ede6;
   color: #1a1a18;
   min-height: 100vh;
-  padding: 2rem 1rem;
 }
 .container { max-width: 860px; margin: 0 auto; }
-h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.3px; }
 .subtitle { font-size: 13px; color: #888780; margin-bottom: 1.5rem; }
 
 .stat-grid {
@@ -26,30 +25,29 @@ h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
 .stat-value { font-size: 22px; font-weight: 500; }
 .stat-value.small { font-size: 17px; }
 
-.view-toggle-row {
+.mode-btn-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(29,158,117,0.08), rgba(29,158,117,0.03));
-}
-.view-toggle {
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  color: #1a1a18;
-  font-weight: 500;
+  margin-bottom: 1.25rem;
 }
-.view-toggle input { cursor: pointer; accent-color: #1D9E75; }
-.view-toggle-note {
-  font-size: 12px;
-  color: #666;
+.mode-btn {
+  padding: 7px 18px;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 20px;
+  background: transparent;
+  color: #555;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.mode-btn:hover {
+  background: rgba(0,0,0,0.04);
+}
+.mode-btn.active {
+  background: #1D9E75;
+  color: #fff;
+  border-color: #1D9E75;
 }
 
 .mode-wrap { display: flex; gap: 4px; margin-top: 6px; }
@@ -73,6 +71,10 @@ h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
   height: 380px;
   margin-bottom: .75rem;
   overflow: hidden;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.07);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
 }
 
 .chart-wrap.secondary {
@@ -92,6 +94,61 @@ h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
   font-size: 12px;
   color: #666;
   margin-top: 2px;
+}
+.sidebar h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 1rem;
+}
+
+.food-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  max-height: calc(100vh - 120px);
+}
+
+.food-list-group {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #aaa;
+  margin: 10px 0 4px 4px;
+}
+
+.food-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1a1a18;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.food-list-item:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+.food-list-item.active {
+  background: rgba(29, 158, 117, 0.08);
+  color: #111;
+  font-weight: 500;
+}
+
+.food-list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 #mainChart {
@@ -172,6 +229,28 @@ h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
   padding: 6px 8px;
   cursor: pointer;
 }
+.app-layout{
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+  align-items: start;
+}
+
+.sidebar{
+  padding: 2rem 1rem 2rem 1.5rem;
+  background: #ffffff;
+  border-right: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 2px 0 12px rgba(0,0,0,0.04);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.main-content{
+  padding: 2rem 1.5rem;
+  min-width: 0;
+}
+
 
 .footnote { font-size: 11px; color: #aaa; margin-top: .5rem; }
 

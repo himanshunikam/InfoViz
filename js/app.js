@@ -14,6 +14,7 @@ let showRollingAvg = false;
 let show3DView = false;
 let rollingWindow = 3;
 let showBasketMode = false;
+let showIndexed = false;
 
 const baset = new Set();
 const legDiv = document.getElementById('legend');
@@ -43,9 +44,24 @@ const CATEGORY_ORDER = [
 ];
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-function colorForIndex(idx, total) {
-  const hue = Math.round((idx / Math.max(total, 1)) * 360);
-  return `hsl(${hue}, 62%, 44%)`;
+
+// Tableau10 — a palette designed specifically for data visualisation.
+// Each colour is perceptually distinct and readable on a white background.
+const COLOR_PALETTE = [
+  '#4e79a7', // steel blue
+  '#f28e2b', // orange
+  '#e15759', // red
+  '#76b7b2', // teal
+  '#59a14f', // green
+  '#edc948', // amber
+  '#b07aa1', // purple
+  '#ff9da7', // rose
+  '#9c755f', // brown
+  '#bab0ac', // warm grey
+];
+
+function colorForIndex(idx) {
+  return COLOR_PALETTE[idx % COLOR_PALETTE.length];
 }
 
 function categorizeItem(itemName) {
@@ -106,6 +122,45 @@ function nearestYearForPointer(mx, yearRange, xScale) {
   });
 
   return nearest;
+}
+
+// ── Data Interpolation ────────────────────────────────────────────────────────
+// Fills null gaps in a values array using linear interpolation.
+// Edge gaps (no anchor on one side) are filled with the nearest known value.
+function interpolateMissing(values) {
+  const result = [...values];
+  const n = result.length;
+  let i = 0;
+
+  while (i < n) {
+    if (result[i] !== null) { i++; continue; }
+
+    // Found a gap — locate its boundaries
+    const left = i - 1;                              // last known index before gap (-1 if none)
+    let right = i + 1;
+    while (right < n && result[right] === null) right++; // first known index after gap
+
+    for (let j = i; j < right; j++) {
+      if (left < 0 && right >= n) {
+        // No anchors at all — leave null (shouldn't happen after 50% filter)
+        result[j] = null;
+      } else if (left < 0) {
+        // Leading gap: no data before — hold the first known value flat
+        result[j] = result[right];
+      } else if (right >= n) {
+        // Trailing gap: no data after — hold the last known value flat
+        result[j] = result[left];
+      } else {
+        // Interpolate: t goes from 0 at left+1 to 1 at right
+        const t = (j - left) / (right - left);
+        result[j] = Math.round((result[left] + t * (result[right] - result[left])) * 100) / 100;
+      }
+    }
+
+    i = right;
+  }
+
+  return result;
 }
 
 // ── CSV Parsing ───────────────────────────────────────────────────────────────
@@ -171,18 +226,26 @@ function buildSeries(rows) {
   });
 
   const sortedNames = [...byItem.keys()].sort((a, b) => a.localeCompare(b));
+
+  // Drop items where more than 50% of years have no data
+  const filteredNames = sortedNames.filter(itemName => {
+    const yearMap = byItem.get(itemName);
+    const missingCount = years.filter(y => !yearMap.has(y)).length;
+    return missingCount / years.length <= 0.5;
+  });
+
   const built = {};
 
-  sortedNames.forEach((itemName, idx) => {
+  filteredNames.forEach((itemName, idx) => {
     const yearMap = byItem.get(itemName);
     built[itemName] = {
-      color: colorForIndex(idx, sortedNames.length),
+      color: colorForIndex(idx),
       dash: DASH_PATTERNS[idx % DASH_PATTERNS.length],
-      values: years.map(y => yearMap.has(y) ? yearMap.get(y) : null)
+      values: interpolateMissing(years.map(y => yearMap.has(y) ? yearMap.get(y) : null))
     };
   });
 
-  return { years, items: built, names: sortedNames };
+  return { years, items: built, names: filteredNames };
 }
 
 // ── UI Rendering ──────────────────────────────────────────────────────────────
@@ -233,6 +296,30 @@ function renderFoodSelect() {
     foodSelect.appendChild(group);
   });
 }
+function renderFoodList() {
+  const list = document.getElementById('food-select-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const visible = visibleNamesByCategory();   // respects the dropdown
+
+  visible.forEach(n => {
+    const item = document.createElement('div');
+    item.className = 'food-list-item' + (sel.has(n) ? ' active' : '');
+
+    const dot = document.createElement('span');
+    dot.className = 'food-list-dot';
+    dot.style.background = ITEMS[n].color;
+
+    const label = document.createElement('span');
+    label.textContent = n;
+
+    item.appendChild(dot);
+    item.appendChild(label);
+    item.addEventListener('click', () => toggle(n));
+    list.appendChild(item);
+  });
+}
 
 function syncFoodSelectSelection() {
   const selectedSet = new Set(sel);
@@ -252,7 +339,7 @@ function toggle(n) {
     if (pill) pill.style.opacity = sel.has(nm) ? '1' : '0.28';
   });
   syncFoodSelectSelection();
-  renderPills();
+  renderFoodList();
   refresh();
 }
 
@@ -262,9 +349,7 @@ function getData(n) {
 }
 
 function updateStats() {
-  document.getElementById('s-items').textContent = sel.size;
-  document.getElementById('s-range').textContent = YEARS[si] + ' – ' + YEARS[ei];
-  document.getElementById('s-pts').textContent = sel.size * (ei - si + 1);
+  // stat cards removed; function kept so refresh() calls don't break
 }
 
 function applyRollingAverage(data, window) {
@@ -282,6 +367,13 @@ function applyRollingAverage(data, window) {
     }
   }
   return result;
+}
+
+function indexData(values){
+  const base = values[0];
+  if (base== null || base ==0) return values;
+  return values.map(v => v == null? null : Math.round((v/base)*1000)/10);
+
 }
 
 function buildDatasets() {
@@ -316,7 +408,7 @@ function buildDatasets() {
 
   const lines = names.filter(n => sel.has(n)).map(n => ({
     label: n,
-    data: getData(n),
+    data: showIndexed ? indexData(getData(n)) : getData(n),
     borderColor: ITEMS[n].color,
     backgroundColor: ITEMS[n].color + '12',
     borderDash: ITEMS[n].dash,
@@ -693,7 +785,7 @@ function buildStackedCategoryChart() {
 
   const categoryColors = d3.scaleOrdinal()
     .domain(CATEGORY_ORDER)
-    .range(CATEGORY_ORDER.map((_, idx) => colorForIndex(idx, CATEGORY_ORDER.length)));
+    .range(CATEGORY_ORDER.map((_, idx) => colorForIndex(idx)));
 
   const seriesGroups = g.selectAll('.stack-layer')
     .data(stackedSeries)
@@ -834,12 +926,12 @@ foodSelect.addEventListener('change', function () {
   }
   sel.clear();
   chosen.forEach(n => sel.add(n));
-  renderPills();
+  renderFoodList();
   refresh();
 });
 
 categoryFilter.addEventListener('change', function () {
-  renderFoodSelect();
+  renderFoodList();
   syncFoodSelectSelection();
 });
 
@@ -848,8 +940,9 @@ toggleRollingAvg.addEventListener('change', function () {
   refresh();
 });
 
-toggle3DView.addEventListener('change', function () {
-  show3DView = this.checked;
+toggle3DView.addEventListener('click', function () {
+  show3DView = !show3DView;
+  this.classList.toggle('active', show3DView);
   refresh();
 });
 
@@ -862,20 +955,18 @@ rollingWindowInput.addEventListener('change', function () {
 btnSelectAll.addEventListener('click', function () {
   sel.clear();
   names.forEach(n => sel.add(n));
-  categoryFilter.value = 'All';
-  renderFoodSelect();
+  renderFoodList();
   syncFoodSelectSelection();
-  renderPills();
+  /*renderPills();*/
   refresh();
 });
 
 btnFirst8.addEventListener('click', function () {
   sel.clear();
   names.slice(0, 8).forEach(n => sel.add(n));
-  categoryFilter.value = 'All';
-  renderFoodSelect();
+  renderFoodList();
   syncFoodSelectSelection();
-  renderPills();
+  /*renderPills();*/
   refresh();
 });
 
@@ -886,7 +977,7 @@ btnSelectCategory.addEventListener('click', function () {
   sel.clear();
   targets.forEach(n => sel.add(n));
   syncFoodSelectSelection();
-  renderPills();
+  renderFoodList();
   refresh();
 });
 
@@ -897,7 +988,7 @@ btnClearCategory.addEventListener('click', function () {
   if (sel.size <= targets.length) return;
   targets.forEach(n => sel.delete(n));
   syncFoodSelectSelection();
-  renderPills();
+  renderFoodList();
   refresh();
 });
 
@@ -917,6 +1008,17 @@ endSlider.addEventListener('input', function () {
   refresh();
 });
 
+document.getElementById('toggle-indexed').addEventListener('click', function () {
+  showIndexed = !showIndexed;
+  this.classList.toggle('active', showIndexed);
+  refresh();
+});
+
+document.getElementById('toggle-basket').addEventListener('click', function () {
+  showBasketMode = !showBasketMode;
+  this.classList.toggle('active', showBasketMode);
+  refresh();
+});
 // ── Chart Building with D3 ───────────────────────────────────────────────────
 function buildChart() {
   const svg = d3.select('#mainChart');
@@ -1057,9 +1159,12 @@ function buildChart() {
     .attr('text-anchor', 'middle')
     .attr('fill', '#888780')
     .attr('font-size', '11px')
-    .text(showRollingAvg 
-      ? `Avg LCU / tonne (${rollingWindow}yr rolling)`
-      : 'LCU / tonne');
+    .text(showIndexed
+      ? `Index (${YEARS[si]= 100})`
+      : showRollingAvg
+        ? `Avg LCU / tonne (${rollingWindow}yr rolling)`
+        : 'LCU / tonne'
+    )
 
   // Interactive tooltip - remove old one first
   d3.select('#d3-tooltip').remove();
@@ -1095,7 +1200,14 @@ function buildChart() {
           if (showRollingAvg) {
             html += `${ds.label}: ${val.toFixed(1)}<br>`;
           } else {
-            html += `${ds.label}: ${val.toLocaleString()} LCU/t<br>`;
+           if (showIndexed) {
+              html += `${ds.label}: ${val.toFixed(1)}<br>`;
+            } else if (showRollingAvg) {
+              html += `${ds.label}: ${val.toFixed(1)}<br>`;
+            } else {
+              html += `${ds.label}: ${val.toLocaleString()} LCU/t<br>`;
+            }
+
           }
         }
       });
@@ -1119,6 +1231,7 @@ function refresh() {
   buildChart();
   buildStackedCategoryChart();
   updateStats();
+  renderLegend();
 }
 
 // ── Initialization ────────────────────────────────────────────────────────────
@@ -1155,7 +1268,7 @@ async function initFromCsv() {
       option.textContent = cat;
       categoryFilter.appendChild(option);
     });
-    categoryFilter.value = 'All';
+    categoryFilter.value = CATEGORY_NAMES[0];
 
     si = 0;
     ei = YEARS.length - 1;
@@ -1168,13 +1281,9 @@ async function initFromCsv() {
     endSlider.value = ei;
     document.getElementById('lbl-start').textContent = YEARS[si];
     document.getElementById('lbl-end').textContent = YEARS[ei];
-    document.getElementById('toggle-basket').addEventListener('change', function() {
-      showBasketMode = this.checked;
-      refresh();   // redraw everything
-});
     renderLegend();
-    renderFoodSelect();
-    renderPills();
+    renderFoodList();
+   /* renderPills();*/
     refresh();
     toggleRollingAvg.checked = false;
     showRollingAvg = false;
