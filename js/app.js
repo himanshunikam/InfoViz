@@ -875,8 +875,7 @@ function buildStackedCategoryChart() {
         return;
       }
 
-      const totalChange = categories.reduce((sum, category) => sum + (row[category] || 0), 0);
-      let html = `<strong>Year ${yearIdx}</strong><br>Total change: ${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}<br>`;
+      let html = `<strong>Year ${yearIdx}</strong><br>`;
       categories.forEach(category => {
         const value = row[category] || 0;
         html += `${category}: ${value >= 0 ? '+' : ''}${value.toFixed(1)}<br>`;
@@ -1278,13 +1277,14 @@ function buildChart() {
     });
 
     // Tooltip HTML with color swatches
-    let html = `<strong style="font-size:13px">📅 ${nearestYear}</strong><br>`;
+    let html = `<strong style="font-size:13px">Year : ${nearestYear}</strong><br>`;
     datasets.forEach(ds => {
       const val = ds.data[yearDataIdx];
       if (val == null) return;
+      const unit = nearestYear >= 2002 ? 'EUR/t' : 'DM/t';
       const formatted = showRollingAvg || showIndexed
         ? val.toFixed(1)
-        : val.toLocaleString() + ' LCU/t';
+        : val.toLocaleString() + ' ' + unit;
       html += `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;`
             + `background:${ds.borderColor};margin-right:5px;vertical-align:middle;"></span>`
             + `<span style="color:rgba(255,255,255,0.75)">${ds.label}:</span> <strong>${formatted}</strong><br>`;

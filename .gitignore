@@ -1,6 +1,5 @@
 .venv/
 .vscode/
-*.csv
 *.pptx
 *.pdf
 
