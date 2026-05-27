@@ -1209,10 +1209,11 @@ function buildChart() {
     )
 
   // ── Interactive hover: crosshair + dots + tooltip ────────────────────────
+  // Listen on the SVG element itself (avoids child elements swallowing events)
   d3.select('#d3-tooltip').remove();
   const tooltip = d3.select('body').append('div')
     .attr('id', 'd3-tooltip')
-    .style('position', 'absolute')
+    .style('position', 'fixed')
     .style('background', 'rgba(20,20,28,0.92)')
     .style('color', 'white')
     .style('padding', '8px 12px')
@@ -1221,13 +1222,12 @@ function buildChart() {
     .style('line-height', '1.6')
     .style('pointer-events', 'none')
     .style('display', 'none')
-    .style('z-index', '1000')
+    .style('z-index', '9999')
     .style('box-shadow', '0 2px 8px rgba(0,0,0,0.35)')
     .style('max-width', '260px');
 
   // Vertical crosshair line (hidden until hover)
   const crosshair = g.append('line')
-    .attr('id', 'hover-crosshair')
     .attr('y1', 0)
     .attr('y2', height)
     .attr('stroke', 'rgba(150,150,150,0.5)')
@@ -1237,73 +1237,72 @@ function buildChart() {
     .style('display', 'none');
 
   // Group for the dots that appear on each line
-  const dotsGroup = g.append('g')
-    .attr('id', 'hover-dots')
-    .attr('pointer-events', 'none');
+  const dotsGroup = g.append('g').attr('pointer-events', 'none');
 
-  const overlay = g.append('rect')
-    .attr('width', width)
-    .attr('height', height)
-    .attr('fill', 'none')
-    .attr('pointer-events', 'auto')
-    .on('mousemove', function(event) {
-      const [mx] = d3.pointer(event, this);
-      const nearestYear = nearestYearForPointer(mx, yearRange, xScale);
-      if (!yearRange.includes(nearestYear)) {
-        tooltip.style('display', 'none');
-        crosshair.style('display', 'none');
-        dotsGroup.selectAll('*').remove();
-        return;
-      }
+  // Attach to the SVG node directly — reliable across all child elements
+  svg.on('mousemove', function(event) {
+    // d3.pointer relative to the SVG, then subtract the group's margin offset
+    const [rawX, rawY] = d3.pointer(event, svg.node());
+    const mx = rawX - margin.left;
+    const my = rawY - margin.top;
 
-      const yearDataIdx = yearRange.indexOf(nearestYear);
-      const snapX = xScale(nearestYear);
-
-      // Move crosshair to snapped year
-      crosshair
-        .attr('x1', snapX)
-        .attr('x2', snapX)
-        .style('display', null);
-
-      // Draw a dot on each line at the hovered year
-      dotsGroup.selectAll('*').remove();
-      datasets.forEach(ds => {
-        const val = ds.data[yearDataIdx];
-        if (val == null) return;
-        dotsGroup.append('circle')
-          .attr('cx', snapX)
-          .attr('cy', yScale(val))
-          .attr('r', 4.5)
-          .attr('fill', ds.borderColor)
-          .attr('stroke', 'white')
-          .attr('stroke-width', 1.5);
-      });
-
-      // Build tooltip HTML with color swatches
-      let html = `<strong style="font-size:13px">📅 ${nearestYear}</strong><br>`;
-      datasets.forEach(ds => {
-        const val = ds.data[yearDataIdx];
-        if (val == null) return;
-        const formatted = showRollingAvg || showIndexed
-          ? val.toFixed(1)
-          : val.toLocaleString() + ' LCU/t';
-        html += `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${ds.borderColor};margin-right:5px;vertical-align:middle;"></span>`
-              + `<span style="color:rgba(255,255,255,0.75)">${ds.label}:</span> <strong>${formatted}</strong><br>`;
-      });
-
-      // Flip tooltip to the left if near the right edge
-      const flipLeft = event.pageX + 270 > window.innerWidth;
-      tooltip
-        .html(html)
-        .style('left', flipLeft ? (event.pageX - 270) + 'px' : (event.pageX + 14) + 'px')
-        .style('top', (event.pageY - 14) + 'px')
-        .style('display', 'block');
-    })
-    .on('mouseleave', function() {
+    // Ignore if the cursor is outside the plot area
+    if (mx < 0 || mx > width || my < 0 || my > height) {
       tooltip.style('display', 'none');
       crosshair.style('display', 'none');
       dotsGroup.selectAll('*').remove();
+      return;
+    }
+
+    const nearestYear = nearestYearForPointer(mx, yearRange, xScale);
+    const yearDataIdx = yearRange.indexOf(nearestYear);
+    const snapX = xScale(nearestYear);
+
+    // Move crosshair
+    crosshair
+      .attr('x1', snapX).attr('x2', snapX)
+      .style('display', null);
+
+    // Dots on each line
+    dotsGroup.selectAll('*').remove();
+    datasets.forEach(ds => {
+      const val = ds.data[yearDataIdx];
+      if (val == null) return;
+      dotsGroup.append('circle')
+        .attr('cx', snapX)
+        .attr('cy', yScale(val))
+        .attr('r', 4.5)
+        .attr('fill', ds.borderColor)
+        .attr('stroke', 'white')
+        .attr('stroke-width', 1.5);
     });
+
+    // Tooltip HTML with color swatches
+    let html = `<strong style="font-size:13px">📅 ${nearestYear}</strong><br>`;
+    datasets.forEach(ds => {
+      const val = ds.data[yearDataIdx];
+      if (val == null) return;
+      const formatted = showRollingAvg || showIndexed
+        ? val.toFixed(1)
+        : val.toLocaleString() + ' LCU/t';
+      html += `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;`
+            + `background:${ds.borderColor};margin-right:5px;vertical-align:middle;"></span>`
+            + `<span style="color:rgba(255,255,255,0.75)">${ds.label}:</span> <strong>${formatted}</strong><br>`;
+    });
+
+    // Flip left if near right edge of viewport
+    const flipLeft = event.clientX + 270 > window.innerWidth;
+    tooltip
+      .html(html)
+      .style('left', flipLeft ? (event.clientX - 270) + 'px' : (event.clientX + 14) + 'px')
+      .style('top',  (event.clientY - 14) + 'px')
+      .style('display', 'block');
+  })
+  .on('mouseleave', function() {
+    tooltip.style('display', 'none');
+    crosshair.style('display', 'none');
+    dotsGroup.selectAll('*').remove();
+  });
 
   // Store chart reference for refresh
   chart = { svg, g, xScale, yScale, yearRange, datasets };
