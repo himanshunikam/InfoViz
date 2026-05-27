@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Germany Food Producer Prices 1991–2022</title>
+<title>Germany Food Producer Prices 1991-2022</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -33,7 +33,7 @@
     </aside>
     <main class="main-content">
 <div class="container">
-  <h1>InfoViz Hi-Fi Prototyp</h1>
+  <h1>FAOSTAT Germany Prices Visualisation</h1>
   <div class="subtitle"></div>
   <div class="mode-btn-row">
     <button type="button" class="mode-btn" id="toggle-basket">Basket Mode</button>
@@ -48,18 +48,6 @@
       aria-label="Line chart of German food producer prices 1991–2022">
     </svg>
   </div>
-
-  <div class="chart-caption">
-    <div class="chart-title">Category price change</div>
-    <div class="chart-note">Stacked year-over-year change by category for the selected foods.</div>
-  </div>
-
-  <div class="chart-wrap secondary">
-    <svg id="stackedChart" role="img"
-      aria-label="Stacked bar chart of yearly category price changes">
-    </svg>
-  </div>
-
   <div class="range-row">
     <span>From</span>
     <input type="range" id="sl-start" min="0" max="31" value="0" step="1">
@@ -77,6 +65,18 @@
     <label for="rolling-window" style="margin-left: 8px;">Window (years):</label>
     <input type="number" id="rolling-window" class="rolling-avg-window" value="3" min="2" max="10">
   </div>
+  <div class="chart-caption">
+    <div class="chart-title">Category price change</div>
+    <div class="chart-note">Stacked year-over-year change by category for the selected foods.</div>
+  </div>
+
+  <div class="chart-wrap secondary">
+    <svg id="stackedChart" role="img"
+      aria-label="Stacked bar chart of yearly category price changes">
+    </svg>
+  </div>
+
+  
 
   
 

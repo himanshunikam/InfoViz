@@ -6,7 +6,7 @@ body {
   min-height: 100vh;
 }
 .container { max-width: 860px; margin: 0 auto; }
-h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.3px; }
+h1 { font-size: 30px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.3px; text-align: center; }
 .subtitle { font-size: 13px; color: #888780; margin-bottom: 1.5rem; }
 
 .stat-grid {

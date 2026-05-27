@@ -783,9 +783,21 @@ function buildStackedCategoryChart() {
     .attr('stroke', 'rgba(0,0,0,0.35)')
     .attr('stroke-width', 1);
 
+  const STACK_PALETTE = [
+    '#7eb8d4', // sky blue     — Milk & Dairy
+    '#e07b8a', // blush rose   — Meat
+    '#6dbf8e', // mint green   — Vegetables
+    '#f5c26b', // peach yellow — Fruits
+    '#a89fd8', // lavender     — Cereals & Grains
+    '#6bc4c4', // soft teal    — Pulses & Legumes
+    '#f0a070', // salmon       — Oilseeds & Oils
+    '#aac96e', // light olive  — Sweeteners
+    '#b0aaa5', // silver grey  — Other
+  ];
+
   const categoryColors = d3.scaleOrdinal()
     .domain(CATEGORY_ORDER)
-    .range(CATEGORY_ORDER.map((_, idx) => colorForIndex(idx)));
+    .range(STACK_PALETTE);
 
   const seriesGroups = g.selectAll('.stack-layer')
     .data(stackedSeries)
@@ -1112,7 +1124,37 @@ function buildChart() {
       .attr('font-size', '10px')
       .text('EUR →');
   }
+  // Draw 2020 COVID highlight band
+  const covidIdx = yearRange.indexOf(2020);
+  if (covidIdx !== -1) {
+    const covidX = xScale(2020);
+    const bandHalf = (xScale.step() * (1 - xScale.padding())) / 2;
 
+    g.append('rect')
+      .attr('x', covidX - bandHalf)
+      .attr('y', 0)
+      .attr('width', bandHalf * 2)
+      .attr('height', height)
+      .attr('fill', 'rgba(220,50,50,0.10)')
+      .attr('pointer-events', 'none');
+
+    g.append('line')
+      .attr('x1', covidX)
+      .attr('y1', 0)
+      .attr('x2', covidX)
+      .attr('y2', height)
+      .attr('stroke', 'rgba(200,60,60,0.45)')
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '4,3')
+      .attr('pointer-events', 'none');
+
+    g.append('text')
+      .attr('x', covidX + 4)
+      .attr('y', 12)
+      .attr('fill', 'rgba(190,60,60,0.75)')
+      .attr('font-size', '10px')
+      .text('COVID-19 ↓');
+  }
   // Draw lines for each dataset
   datasets.forEach((ds, i) => {
     g.append('path')
@@ -1166,19 +1208,38 @@ function buildChart() {
         : 'LCU / tonne'
     )
 
-  // Interactive tooltip - remove old one first
+  // ── Interactive hover: crosshair + dots + tooltip ────────────────────────
   d3.select('#d3-tooltip').remove();
   const tooltip = d3.select('body').append('div')
     .attr('id', 'd3-tooltip')
     .style('position', 'absolute')
-    .style('background', 'rgba(0,0,0,0.8)')
+    .style('background', 'rgba(20,20,28,0.92)')
     .style('color', 'white')
-    .style('padding', '6px 10px')
-    .style('border-radius', '4px')
+    .style('padding', '8px 12px')
+    .style('border-radius', '6px')
     .style('font-size', '12px')
+    .style('line-height', '1.6')
     .style('pointer-events', 'none')
     .style('display', 'none')
-    .style('z-index', '1000');
+    .style('z-index', '1000')
+    .style('box-shadow', '0 2px 8px rgba(0,0,0,0.35)')
+    .style('max-width', '260px');
+
+  // Vertical crosshair line (hidden until hover)
+  const crosshair = g.append('line')
+    .attr('id', 'hover-crosshair')
+    .attr('y1', 0)
+    .attr('y2', height)
+    .attr('stroke', 'rgba(150,150,150,0.5)')
+    .attr('stroke-width', 1)
+    .attr('stroke-dasharray', '4,3')
+    .attr('pointer-events', 'none')
+    .style('display', 'none');
+
+  // Group for the dots that appear on each line
+  const dotsGroup = g.append('g')
+    .attr('id', 'hover-dots')
+    .attr('pointer-events', 'none');
 
   const overlay = g.append('rect')
     .attr('width', width)
@@ -1186,40 +1247,62 @@ function buildChart() {
     .attr('fill', 'none')
     .attr('pointer-events', 'auto')
     .on('mousemove', function(event) {
-      const [mx, my] = d3.pointer(event, this);
-      const yearIdx = nearestYearForPointer(mx, yearRange, xScale);
-      if (!yearRange.includes(yearIdx)) {
+      const [mx] = d3.pointer(event, this);
+      const nearestYear = nearestYearForPointer(mx, yearRange, xScale);
+      if (!yearRange.includes(nearestYear)) {
         tooltip.style('display', 'none');
+        crosshair.style('display', 'none');
+        dotsGroup.selectAll('*').remove();
         return;
       }
 
-      let html = `<strong>Year ${yearIdx}</strong><br>`;
-      datasets.forEach((ds, i) => {
-        const val = ds.data[yearRange.indexOf(yearIdx)];
-        if (val != null) {
-          if (showRollingAvg) {
-            html += `${ds.label}: ${val.toFixed(1)}<br>`;
-          } else {
-           if (showIndexed) {
-              html += `${ds.label}: ${val.toFixed(1)}<br>`;
-            } else if (showRollingAvg) {
-              html += `${ds.label}: ${val.toFixed(1)}<br>`;
-            } else {
-              html += `${ds.label}: ${val.toLocaleString()} LCU/t<br>`;
-            }
+      const yearDataIdx = yearRange.indexOf(nearestYear);
+      const snapX = xScale(nearestYear);
 
-          }
-        }
+      // Move crosshair to snapped year
+      crosshair
+        .attr('x1', snapX)
+        .attr('x2', snapX)
+        .style('display', null);
+
+      // Draw a dot on each line at the hovered year
+      dotsGroup.selectAll('*').remove();
+      datasets.forEach(ds => {
+        const val = ds.data[yearDataIdx];
+        if (val == null) return;
+        dotsGroup.append('circle')
+          .attr('cx', snapX)
+          .attr('cy', yScale(val))
+          .attr('r', 4.5)
+          .attr('fill', ds.borderColor)
+          .attr('stroke', 'white')
+          .attr('stroke-width', 1.5);
       });
 
+      // Build tooltip HTML with color swatches
+      let html = `<strong style="font-size:13px">📅 ${nearestYear}</strong><br>`;
+      datasets.forEach(ds => {
+        const val = ds.data[yearDataIdx];
+        if (val == null) return;
+        const formatted = showRollingAvg || showIndexed
+          ? val.toFixed(1)
+          : val.toLocaleString() + ' LCU/t';
+        html += `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${ds.borderColor};margin-right:5px;vertical-align:middle;"></span>`
+              + `<span style="color:rgba(255,255,255,0.75)">${ds.label}:</span> <strong>${formatted}</strong><br>`;
+      });
+
+      // Flip tooltip to the left if near the right edge
+      const flipLeft = event.pageX + 270 > window.innerWidth;
       tooltip
         .html(html)
-        .style('left', (event.pageX + 10) + 'px')
-        .style('top', (event.pageY - 10) + 'px')
+        .style('left', flipLeft ? (event.pageX - 270) + 'px' : (event.pageX + 14) + 'px')
+        .style('top', (event.pageY - 14) + 'px')
         .style('display', 'block');
     })
     .on('mouseleave', function() {
       tooltip.style('display', 'none');
+      crosshair.style('display', 'none');
+      dotsGroup.selectAll('*').remove();
     });
 
   // Store chart reference for refresh
@@ -1288,7 +1371,6 @@ async function initFromCsv() {
     toggleRollingAvg.checked = false;
     showRollingAvg = false;
     rollingWindowInput.value = rollingWindow;
-    subtitle.textContent = `Annual producer prices from producer-prices_deu.csv · ${YEARS[0]}–${YEARS[YEARS.length - 1]} · FAOSTAT`;
   } catch (err) {
     console.error(err);
     subtitle.textContent = 'Could not load producer-prices_deu.csv. Run from a local web server (not file://).';
@@ -1437,82 +1519,137 @@ function drawARLoop() {
     .map(name => ({ name, value: ITEMS[name].values[ei], color: ITEMS[name].color }))
     .filter(d => d.value != null);
 
-  if (data.length > 0) {
-    drawARBarChart(ctx, W, H, data);
+  if (selected.length > 0) {
+    drawARLineChart(ctx, W, H, selected);
   }
 
   // Schedule ourselves to run again next frame
   arAnimId = requestAnimationFrame(drawARLoop);
 }
 
-// Draws a horizontal bar chart centred on the canvas
-function drawARBarChart(ctx, W, H, data) {
-  // Panel size: centred, max 640 px wide, tall enough for the bars
-  const rowH    = 38;
-  const headerH = 62;
-  const padX    = Math.max(24, W * 0.05);
-  const panelW  = Math.min(W * 0.92, 640);
-  const panelH  = headerH + data.length * rowH + 16;
+// Draws the line chart (matching the main chart) onto the AR canvas
+function drawARLineChart(ctx, W, H, selected) {
+  // ── Panel layout ───────────────────────────────────────────────────────────
+  const panelW  = Math.min(W * 0.94, 780);
+  const panelH  = Math.min(H * 0.72, 420);
   const panelX  = (W - panelW) / 2;
   const panelY  = (H - panelH) / 2;
 
-  // ── Semi-transparent dark background panel ────────────────────────────────
-  ctx.fillStyle = 'rgba(8, 8, 18, 0.82)';
+  const headerH = 52;
+  const mLeft   = 58;
+  const mRight  = 16;
+  const mBottom = 36;
+
+  const plotX = panelX + mLeft;
+  const plotY = panelY + headerH;
+  const plotW = panelW - mLeft - mRight;
+  const plotH = panelH - headerH - mBottom;
+
+  // ── Background panel ───────────────────────────────────────────────────────
+  ctx.fillStyle = 'rgba(10, 10, 20, 0.86)';
   arRoundRect(ctx, panelX, panelY, panelW, panelH, 14);
   ctx.fill();
-
-  // Thin border
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
   ctx.lineWidth = 1;
   arRoundRect(ctx, panelX, panelY, panelW, panelH, 14);
   ctx.stroke();
 
-  // ── Header text ───────────────────────────────────────────────────────────
+  // ── Header ─────────────────────────────────────────────────────────────────
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = `bold 16px system-ui, sans-serif`;
+  ctx.font = 'bold 15px system-ui, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`Food Producer Prices · ${YEARS[ei]}`, panelX + padX, panelY + 26);
+  ctx.fillText(`Food Producer Prices · ${YEARS[si]}–${YEARS[ei]}`, panelX + mLeft, panelY + 22);
 
-  ctx.fillStyle = 'rgba(255,255,255,0.42)';
-  ctx.font = `12px system-ui, sans-serif`;
-  ctx.fillText('LCU / tonne · Germany · FAOSTAT', panelX + padX, panelY + 46);
+  ctx.fillStyle = 'rgba(255,255,255,0.40)';
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText('LCU / tonne · Germany · FAOSTAT', panelX + mLeft, panelY + 40);
 
-  // ── Horizontal bar chart ──────────────────────────────────────────────────
-  const barMaxW = panelW * 0.48;   // bars occupy left 48% of panel
-  const barX    = panelX + padX;
-  const maxVal  = Math.max(...data.map(d => d.value));
+  // ── Collect data for the visible year range ────────────────────────────────
+  const yearRange = YEARS.slice(si, ei + 1);
+  const datasets  = selected.map(name => ({
+    name,
+    color: ITEMS[name].color,
+    values: ITEMS[name].values.slice(si, ei + 1)
+  }));
 
-  data.forEach((d, i) => {
-    const rowY  = panelY + headerH + i * rowH;
-    const barW  = (d.value / maxVal) * barMaxW;
-    const barH2 = rowH * 0.52;
-    const barY  = rowY + (rowH - barH2) / 2;
+  // y-scale: find global min/max across all selected items
+  let allVals = [];
+  datasets.forEach(ds => ds.values.forEach(v => { if (v != null) allVals.push(v); }));
+  if (allVals.length === 0) return;
+  const yMin = Math.min(...allVals) * 0.95;
+  const yMax = Math.max(...allVals) * 1.05;
 
-    // Grey track (shows full 100% extent of the bar)
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    ctx.fillRect(barX, barY, barMaxW, barH2);
+  // Helper functions that convert data → pixel coords
+  const xOf = i   => plotX + (i / (yearRange.length - 1 || 1)) * plotW;
+  const yOf = val => plotY + plotH - ((val - yMin) / (yMax - yMin)) * plotH;
 
-    // Coloured bar (proportional to value)
-    ctx.fillStyle = d.color;
+  // ── Faint horizontal grid lines ────────────────────────────────────────────
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 0.8;
+  const tickCount = 5;
+  for (let t = 0; t <= tickCount; t++) {
+    const val = yMin + (t / tickCount) * (yMax - yMin);
+    const py  = yOf(val);
+    ctx.beginPath();
+    ctx.moveTo(plotX, py);
+    ctx.lineTo(plotX + plotW, py);
+    ctx.stroke();
+
+    // Y-axis label
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(val >= 1000 ? (val / 1000).toFixed(1) + 'k' : val.toFixed(0),
+                 plotX - 5, py + 4);
+  }
+
+  // ── X-axis year labels ─────────────────────────────────────────────────────
+  const step = Math.ceil(yearRange.length / 8);
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  yearRange.forEach((yr, i) => {
+    if (i % step !== 0 && i !== yearRange.length - 1) return;
+    ctx.fillText(String(yr), xOf(i), plotY + plotH + 18);
+  });
+
+  // ── Draw one line per selected item ───────────────────────────────────────
+  datasets.forEach(ds => {
+    ctx.beginPath();
+    ctx.strokeStyle = ds.color;
+    ctx.lineWidth   = 2;
     ctx.globalAlpha = 0.88;
-    ctx.fillRect(barX, barY, barW, barH2);
+    let started = false;
+    ds.values.forEach((val, i) => {
+      if (val == null) { started = false; return; }
+      if (!started) { ctx.moveTo(xOf(i), yOf(val)); started = true; }
+      else            ctx.lineTo(xOf(i), yOf(val));
+    });
+    ctx.stroke();
     ctx.globalAlpha = 1;
+  });
 
-    // Value label inside bar (only if bar is wide enough to fit text)
-    if (barW > 50) {
-      ctx.fillStyle = 'rgba(255,255,255,0.65)';
-      ctx.font = `11px system-ui, sans-serif`;
-      ctx.textAlign = 'right';
-      ctx.fillText(d.value.toLocaleString(), barX + barW - 5, barY + barH2 * 0.72);
-    }
+  // ── Legend — coloured dot + truncated name ─────────────────────────────────
+  const legendY  = plotY + plotH + mBottom - 4;   // just below x-axis labels
+  // stacked vertically on the right margin instead, to avoid overlap
+  const legX     = panelX + panelW - mRight - 4;
+  const legLineH = 15;
+  const maxLegItems = Math.floor(plotH / legLineH);
+  const legItems = datasets.slice(0, maxLegItems);
 
-    // Item name to the right of the bar track
-    const nameX = barX + barMaxW + 10;
-    let label = d.name.length > 22 ? d.name.slice(0, 20) + '…' : d.name;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.font = `12px system-ui, sans-serif`;
+  legItems.forEach((ds, i) => {
+    const ly = plotY + i * legLineH + 10;
+    // dot
+    ctx.beginPath();
+    ctx.arc(legX - 90, ly, 4, 0, Math.PI * 2);
+    ctx.fillStyle = ds.color;
+    ctx.fill();
+    // name
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font = '10px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(label, nameX, barY + barH2 * 0.72);
+    const label = ds.name.length > 18 ? ds.name.slice(0, 16) + '…' : ds.name;
+    ctx.fillText(label, legX - 82, ly + 4);
   });
 }
 
