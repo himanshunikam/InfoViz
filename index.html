@@ -1,108 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Germany Food Producer Prices 1991-2022</title>
-<link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Germany Agricultural Prices — 3D Visualisation</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.176.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
-  <div class="app-layout">
-    <aside class="sidebar">
-      <div class="picker-wrap">
-    <div>
-      <label class="picker-label" for="food-select">Foods (Ctrl/Cmd + click for multi-select)</label>
-      <div style="display:flex; gap:8px; margin-bottom:6px; align-items:center; flex-wrap:wrap;">
-        <label class="picker-label" for="category-filter" style="margin-bottom:0;">Category</label>
-        <select id="category-filter" class="picker-filter">
-          <option value="All">All categories</option>
+  <div id="app">
+
+    <!-- ── Sidebar ─────────────────────────────────── -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-mark">FAO</div>
+        <div>
+          <h2>Germany</h2>
+          <p>Producer Prices · 1991–2022</p>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <label for="category-filter">Category</label>
+        <select id="category-filter">
+          <option value="All">All Categories</option>
+          <option value="Milk & Dairy">Milk &amp; Dairy</option>
+          <option value="Meat">Meat</option>
+          <option value="Vegetables">Vegetables</option>
+          <option value="Fruits">Fruits</option>
+          <option value="Cereals & Grains">Cereals &amp; Grains</option>
+          <option value="Pulses & Legumes">Pulses &amp; Legumes</option>
+          <option value="Oilseeds & Oils">Oilseeds &amp; Oils</option>
+          <option value="Sweeteners">Sweeteners</option>
+          <option value="Other">Other</option>
         </select>
       </div>
-      <!-- Hidden select: JS still needs this for its event listeners and data sync -->
-      <select id="food-select" style="display:none" multiple></select>
-      <!-- Visible replacement: we build this with renderFoodList() in JS -->
-      <div id="food-select-list" class="food-list"></div>
-    </div>
-    <div class="picker-actions">
-      <button type="button" class="picker-btn" id="btn-select-all">Select all</button>
-      <button type="button" class="picker-btn" id="btn-first-8">First 8</button>
-      <button type="button" class="picker-btn" id="btn-select-category">Select category</button>
-      <button type="button" class="picker-btn" id="btn-clear-category">Clear category</button>
-    </div>
-  </div>
+
+      <div class="sidebar-section sidebar-actions">
+        <button id="btn-select-all">All</button>
+        <button id="btn-first-8">Top 8</button>
+        <button id="btn-clear">Clear</button>
+      </div>
+
+      <div class="sidebar-section food-list-wrap">
+        <label>Items</label>
+        <div id="food-list"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <p>Source: FAOSTAT · Unit: LCU/tonne</p>
+      </div>
     </aside>
-    <main class="main-content">
-<div class="container">
-  <h1>FAOSTAT Germany Producer Prices Visualisation</h1>
-  <div class="subtitle"></div>
-  <div class="mode-btn-row">
-    <button type="button" class="mode-btn" id="toggle-basket">Basket Mode</button>
-    <button type="button" class="mode-btn" id="toggle-3d-view">3D View</button>
-    <button type="button" class="mode-btn" id="toggle-indexed">Indexed View</button>
+
+    <!-- ── Main area ───────────────────────────────── -->
+    <main id="main">
+
+      <header id="topbar">
+        <h1 id="page-title">Germany Agricultural Producer Prices</h1>
+        <nav id="viz-tabs">
+          <button class="tab-btn active" data-viz="1">
+            <span class="tab-icon">&#9646;&#9646;&#9646;</span>
+            3D Bar Matrix
+          </button>
+          <button class="tab-btn" data-viz="2">
+            <span class="tab-icon">&#9650;</span>
+            Price Terrain
+          </button>
+          <button class="tab-btn" data-viz="3">
+            <span class="tab-icon">&#9679;</span>
+            Bubble Orbs
+          </button>
+        </nav>
+      </header>
+
+      <div id="controls-bar">
+        <div class="control-group" id="range-control">
+          <label>Year range</label>
+          <div class="year-range">
+            <span id="year-start-label">1991</span>
+            <input type="range" id="sl-start" min="0" max="31" value="0">
+            <input type="range" id="sl-end"   min="0" max="31" value="31">
+            <span id="year-end-label">2022</span>
+          </div>
+        </div>
+
+        <div class="control-group" id="time-control" style="display:none">
+          <label>Year: <span id="time-year-label">2022</span></label>
+          <input type="range" id="sl-time" min="0" max="31" value="31">
+          <button id="btn-animate" title="Play / Pause">&#9654;</button>
+        </div>
+
+        <div class="control-group" id="crisis-control" style="display:none">
+          <label>Crisis Period</label>
+          <div class="crisis-btns">
+            <button class="crisis-btn active" data-crisis="">None</button>
+            <button class="crisis-btn" data-crisis="eur">
+              EUR Switch<br><small>2001–2002</small>
+            </button>
+            <button class="crisis-btn" data-crisis="covid">
+              COVID-19<br><small>2020–2022</small>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="canvas-container">
+        <canvas id="three-canvas"></canvas>
+        <div id="tooltip" class="hidden"></div>
+        <div id="loading">Loading data…</div>
+      </div>
+
+      <footer id="legend"></footer>
+
+    </main>
   </div>
 
-  <div class="legend" id="legend" style="min-height: 18px;"></div>
-
-  <div class="chart-wrap">
-    <svg id="mainChart" role="img"
-      aria-label="Line chart of German food producer prices 1991–2022">
-    </svg>
-  </div>
-  <div class="range-row">
-    <span>From</span>
-    <input type="range" id="sl-start" min="0" max="31" value="0" step="1">
-    <span class="range-lbl" id="lbl-start">1991</span>
-    <span class="range-arrow">→</span>
-    <input type="range" id="sl-end" min="0" max="31" value="31" step="1">
-    <span class="range-lbl" id="lbl-end">2022</span>
-  </div>
-
-  <div class="rolling-avg-wrap">
-    <label>
-      <input type="checkbox" id="toggle-rolling-avg">
-      <span>Show rolling average</span>
-    </label>
-    <label for="rolling-window" style="margin-left: 8px;">Window (years):</label>
-    <input type="number" id="rolling-window" class="rolling-avg-window" value="3" min="2" max="10">
-  </div>
-  <div class="chart-caption">
-    <div class="chart-title">Category price change</div>
-    <div class="chart-note">Stacked year-over-year change by category for the selected foods.</div>
-  </div>
-
-  <div class="chart-wrap secondary">
-    <svg id="stackedChart" role="img"
-      aria-label="Stacked bar chart of yearly category price changes">
-    </svg>
-  </div>
-
-  
-
-  
-
-  <div class="pills" id="pills"></div>
-
-  <div class="ar-row">
-    <button type="button" id="btn-ar" class="ar-btn">View in AR</button>
-    <span class="ar-note" id="ar-note">Opens your camera with a price chart overlay</span>
-  </div>
-</div>
-
-<!-- Full-screen AR overlay: sits on top of everything when active -->
-<div id="ar-overlay" class="ar-overlay" style="display:none;">
-  <!-- The live camera feed plays here as a background -->
-  <video id="ar-video" autoplay playsinline muted></video>
-  <!-- We draw our chart on this transparent canvas, layered over the video -->
-  <canvas id="ar-canvas"></canvas>
-  <div class="ar-hud">
-    <span class="ar-label-badge">AR · Food Prices</span>
-    <button type="button" id="ar-close" class="ar-close-btn">Exit AR</button>
-  </div>
-</div>
-
-<script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="js/app.js"></script>
-</main>
-  </div>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
