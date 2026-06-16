@@ -17,6 +17,16 @@ export const CATEGORY_COLORS = {
   'Other':            '#bab0ac',
 };
 
+// ── Consumer Price Index dataset (Destatis 61111-0006) ──────────────────────────
+// Base year 1991 (shared with the producer dataset) through 2026.
+export const CPI_YEARS = Array.from({ length: 2026 - 1991 + 1 }, (_, i) => 1991 + i);
+
+// 12 COICOP categories, ordered by code (CC13-01 … CC13-12).
+const CPI_COLORS = [
+  '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc948',
+  '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac', '#86bcb6', '#d37295',
+];
+
 function parseCsvLine(line) {
   const out = [];
   let current = '';
@@ -138,5 +148,95 @@ export async function loadData() {
     };
   });
 
-  return { names: filteredNames, items };
+  return {
+    key: 'producer',
+    label: 'Producer Prices',
+    unit: 'LCU/tonne',
+    years: YEARS_FULL,
+    hasMonthly: false,
+    names: filteredNames,
+    items,
+  };
+}
+
+// ── CPI loader ──────────────────────────────────────────────────────────────────
+// The Destatis flat file is ';'-delimited (with a BOM) and holds one row per
+// (year, month, category). We build two views from it:
+//   • annual  — each year's months averaged, indexed from 1991 (for the shared vizzes)
+//   • monthly — a [yearIndex][monthIndex] grid per category (for the inflation view)
+export async function loadCpiData() {
+  const text = await fetch('61111-0006_en_flat.csv').then(r => r.text());
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(Boolean);
+  const header = lines[0].split(';');
+  const idx = {
+    year:    header.indexOf('time'),
+    monthCode: header.indexOf('1_variable_attribute_code'),
+    catCode:   header.indexOf('3_variable_attribute_code'),
+    catLabel:  header.indexOf('3_variable_attribute_label'),
+    value:     header.indexOf('value'),
+  };
+
+  // category code → { label, monthly: Map<year, Map<month, value>> }
+  const byCat = new Map();
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(';');
+    const year = Number(cols[idx.year]);
+    const month = Number(String(cols[idx.monthCode]).replace(/\D/g, '')); // MONAT07 → 7
+    const code = cols[idx.catCode];
+    const label = cols[idx.catLabel];
+    const value = Number(cols[idx.value]);
+    if (!code || !Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(value)) continue;
+
+    if (!byCat.has(code)) byCat.set(code, { label, years: new Map() });
+    const entry = byCat.get(code);
+    if (!entry.years.has(year)) entry.years.set(year, new Map());
+    entry.years.get(year).set(month, value);
+  }
+
+  const codes = [...byCat.keys()].sort();   // CC13-01 … CC13-12
+  const names = codes.map(c => byCat.get(c).label);
+  const nYears = CPI_YEARS.length;
+
+  const items = {};
+  codes.forEach((code, ci) => {
+    const entry = byCat.get(code);
+    const name = entry.label;
+
+    // monthly grid + annual mean
+    const monthly = [];
+    const annual = [];
+    CPI_YEARS.forEach((year) => {
+      const monthMap = entry.years.get(year);
+      const row = new Array(12).fill(null);
+      let sum = 0, count = 0;
+      if (monthMap) {
+        for (let m = 1; m <= 12; m++) {
+          if (monthMap.has(m)) {
+            row[m - 1] = monthMap.get(m);
+            sum += monthMap.get(m);
+            count++;
+          }
+        }
+      }
+      monthly.push(row);
+      annual.push(count ? Math.round((sum / count) * 100) / 100 : null);
+    });
+
+    items[name] = {
+      category: name,                     // each CPI category is its own group
+      color: CPI_COLORS[ci % CPI_COLORS.length],
+      values: interpolateMissing(annual), // annual series, indexed from 1991
+      monthly,                            // [yearIndex][monthIndex] → value | null
+    };
+  });
+
+  return {
+    key: 'cpi',
+    label: 'Consumer Prices (CPI)',
+    unit: 'Index (2020=100)',
+    years: CPI_YEARS,
+    hasMonthly: true,
+    names,
+    items,
+  };
 }

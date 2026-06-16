@@ -7,31 +7,24 @@ const CATEGORY_ORDER = [
 ];
 
 export class BubbleViz {
-  constructor(canvas, tooltip) {
-    this.canvas = canvas;
-    this.tooltip = tooltip;
+  constructor() {
     this.scene = null;
-    this.renderer = null;
     this.camera = null;
     this.controls = null;
-    this.animId = null;
+    this.root = null;
+    this.stars = null;
     this.bubbles = [];
     this.sphereGeo = null;
-    this.raycaster = new THREE.Raycaster();
-    this.mouse = new THREE.Vector2(-9999, -9999);
-    this._clock = new THREE.Clock();
-    this._onResize = this._onResize.bind(this);
-    this._onMouseMove = this._onMouseMove.bind(this);
   }
 
-  init() {
-    const w = this.canvas.clientWidth || this.canvas.parentElement.clientWidth;
-    const h = this.canvas.clientHeight || this.canvas.parentElement.clientHeight;
+  build(renderer) {
+    const canvas = renderer.domElement;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0d1117);
 
-    // Star field
+    // Star field — kept at scene level so it surrounds the viewer in VR too.
     const starGeo = new THREE.BufferGeometry();
     const verts = [];
     for (let i = 0; i < 3000; i++) {
@@ -42,14 +35,14 @@ export class BubbleViz {
       );
     }
     starGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    this.scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x8b949e, size: 0.25 })));
+    this.stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x8b949e, size: 0.25 }));
+    this.scene.add(this.stars);
 
     this.camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 1000);
     this.camera.position.set(0, 0, 75);
 
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    this.renderer.setSize(w, h);
+    this.root = new THREE.Group();
+    this.scene.add(this.root);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
     this.scene.add(ambient);
@@ -60,7 +53,7 @@ export class BubbleViz {
     pt2.position.set(-40, -30, 20);
     this.scene.add(pt2);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new OrbitControls(this.camera, renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
     this.controls.autoRotate = true;
@@ -68,24 +61,18 @@ export class BubbleViz {
     this.controls.minDistance = 10;
     this.controls.maxDistance = 200;
 
-    // Shared sphere geometry — medium detail
     this.sphereGeo = new THREE.SphereGeometry(1, 28, 20);
-
-    window.addEventListener('resize', this._onResize);
-    this.canvas.addEventListener('mousemove', this._onMouseMove);
-    this._animate();
   }
 
   update(names, items, yearIdx) {
     this.bubbles.forEach(({ mesh }) => {
       mesh.material.dispose();
-      this.scene.remove(mesh);
+      this.root.remove(mesh);
     });
     this.bubbles = [];
 
     if (!names.length) return;
 
-    // Group items by category
     const byCategory = {};
     CATEGORY_ORDER.forEach(c => byCategory[c] = []);
     names.forEach(name => {
@@ -104,7 +91,6 @@ export class BubbleViz {
 
     activeCats.forEach((cat, ci) => {
       const catNames = byCategory[cat];
-      // Place cluster center on a circle in the XY plane
       const clusterAngle = (ci / nCats) * Math.PI * 2;
       const clusterR = nCats > 1 ? 22 : 0;
       const cx = Math.cos(clusterAngle) * clusterR;
@@ -128,7 +114,6 @@ export class BubbleViz {
 
         const mesh = new THREE.Mesh(this.sphereGeo, mat);
 
-        // Deterministic placement within cluster: small circle
         const localAngle = (ni / Math.max(catNames.length, 1)) * Math.PI * 2;
         const localR = 5 + Math.floor(ni / 8) * 4;
         const px = cx + Math.cos(localAngle) * localR;
@@ -137,17 +122,13 @@ export class BubbleViz {
 
         mesh.position.set(px, py, pz);
         mesh.scale.setScalar(radius);
-
-        // Store for animation floating
         mesh.userData = {
-          name,
-          category: cat,
-          value: val,
+          name, category: cat, value: val,
           baseX: px, baseY: py, baseZ: pz,
-          phase: (ni + ci * 7) * 1.3, // deterministic phase offset
+          phase: (ni + ci * 7) * 1.3,
         };
 
-        this.scene.add(mesh);
+        this.root.add(mesh);
         this.bubbles.push({ mesh, name });
       });
     });
@@ -169,58 +150,43 @@ export class BubbleViz {
     });
   }
 
-  _onMouseMove(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  // ── Viewer plug-in interface ─────────────────────────────────────────────────
 
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-    const hits = this.raycaster.intersectObjects(this.bubbles.map(b => b.mesh));
+  getPickTargets() { return this.bubbles.map(b => b.mesh); }
 
-    if (hits.length) {
-      const { name, category, value } = hits[0].object.userData;
-      this.tooltip.classList.remove('hidden');
-      this.tooltip.style.left = (e.clientX - rect.left + 14) + 'px';
-      this.tooltip.style.top = (e.clientY - rect.top - 36) + 'px';
-      this.tooltip.innerHTML =
-        `<strong>${name}</strong><br><span style="color:#8b949e">${category}</span><br>Price: <strong>${value.toLocaleString()} LCU/t</strong>`;
-      // Pause auto-rotate on hover
-      this.controls.autoRotate = false;
-    } else {
-      this.tooltip.classList.add('hidden');
-      this.controls.autoRotate = true;
-    }
+  describe(obj) {
+    const { name, category, value } = obj.userData;
+    if (name === undefined) return null;
+    return { title: name, sub: category, value: `Price: ${value.toLocaleString()} LCU/t` };
   }
 
-  _onResize() {
-    const w = this.canvas.clientWidth;
-    const h = this.canvas.clientHeight;
+  onHover(obj) {
+    // Pause the gentle auto-rotation while inspecting a bubble (desktop).
+    this.controls.autoRotate = !obj;
+  }
+
+  setVRMode() { /* starfield stays; no desktop-only decor to toggle */ }
+
+  onResize(w, h) {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
   }
 
-  _animate() {
-    this.animId = requestAnimationFrame(() => this._animate());
-    const t = this._clock.getElapsedTime();
-
+  frame(t /*, presenting */) {
     this.bubbles.forEach(({ mesh }) => {
       const { baseX, baseY, baseZ, phase } = mesh.userData;
       mesh.position.x = baseX + Math.sin(t * 0.45 + phase) * 0.6;
       mesh.position.y = baseY + Math.cos(t * 0.38 + phase) * 0.6;
       mesh.position.z = baseZ + Math.sin(t * 0.28 + phase * 0.7) * 0.4;
     });
-
-    this.controls.update();
-    this.renderer.render(this.scene, this.camera);
   }
 
-  destroy() {
-    cancelAnimationFrame(this.animId);
-    window.removeEventListener('resize', this._onResize);
-    this.canvas.removeEventListener('mousemove', this._onMouseMove);
+  dispose() {
     this.bubbles.forEach(({ mesh }) => mesh.material.dispose());
+    this.bubbles = [];
     this.sphereGeo?.dispose();
-    this.renderer.dispose();
+    this.stars?.geometry.dispose();
+    this.stars?.material.dispose();
+    this.controls?.dispose();
   }
 }

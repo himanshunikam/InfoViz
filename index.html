@@ -28,6 +28,14 @@
       </div>
 
       <div class="sidebar-section">
+        <label>Dataset</label>
+        <div class="dataset-toggle">
+          <button class="ds-btn active" data-dataset="producer">Producer</button>
+          <button class="ds-btn" data-dataset="cpi">Consumer</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
         <label for="category-filter">Category</label>
         <select id="category-filter">
           <option value="All">All Categories</option>
@@ -76,6 +84,10 @@
           <button class="tab-btn" data-viz="3">
             <span class="tab-icon">&#9679;</span>
             Bubble Orbs
+          </button>
+          <button class="tab-btn" data-viz="4" id="tab-inflation" style="display:none">
+            <span class="tab-icon">&#9650;</span>
+            Inflation
           </button>
         </nav>
       </header>

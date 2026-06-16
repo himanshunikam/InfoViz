@@ -1,19 +1,25 @@
-import { loadData, YEARS_FULL } from './data.js';
+import { loadData, loadCpiData } from './data.js';
+import { Viewer } from './viewer.js';
 import { BarMatrixViz } from './viz1.js';
 import { TerrainViz } from './viz2.js';
 import { BubbleViz } from './viz3.js';
+import { InflationViz } from './viz4.js';
 
 // ── State ──────────────────────────────────────────────────────────────────────
+const DATASETS = {};
+let dsKey = 'producer';
 let ITEMS = {};
 let NAMES = [];
+let YEARS = [];
 const sel = new Set();
 let activeViz = 1;
 let startIdx = 0;
-let endIdx = 31;
-let timeIdx = 31;
+let endIdx = 0;
+let timeIdx = 0;
 let animating = false;
 let animTimer = null;
 let viz = null;
+let viewer = null;
 
 // ── DOM ────────────────────────────────────────────────────────────────────────
 const canvas       = document.getElementById('three-canvas');
@@ -25,6 +31,8 @@ const btnSelectAll = document.getElementById('btn-select-all');
 const btnFirst8    = document.getElementById('btn-first-8');
 const btnClear     = document.getElementById('btn-clear');
 const tabBtns      = document.querySelectorAll('.tab-btn');
+const tabInflation = document.getElementById('tab-inflation');
+const dsBtns       = document.querySelectorAll('.ds-btn');
 const slStart      = document.getElementById('sl-start');
 const slEnd        = document.getElementById('sl-end');
 const slTime       = document.getElementById('sl-time');
@@ -36,16 +44,20 @@ const btnAnimate    = document.getElementById('btn-animate');
 const legendDiv     = document.getElementById('legend');
 const crisisControl = document.getElementById('crisis-control');
 const crisisBtns    = document.querySelectorAll('.crisis-btn');
+const footerInfo    = document.querySelector('.sidebar-footer p');
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
 async function init() {
   try {
-    const data = await loadData();
-    ITEMS = data.items;
-    NAMES = data.names;
-    buildFoodList();
-    selectFirst8();
-    switchViz(1);
+    // Load only the producer dataset at startup (single fetch). CPI is fetched
+    // lazily the first time the user switches to it — keeps boot fast/reliable.
+    DATASETS.producer = await loadData();
+
+    viewer = new Viewer(canvas, tooltip);
+    viewer.init();
+    viewer.onRequestViz = (n) => switchViz(n);  // in-VR panel buttons
+
+    await setDataset('producer');
     loading.classList.add('hidden');
   } catch (err) {
     loading.textContent = 'Failed to load data. Please run via a local server.';
@@ -53,13 +65,75 @@ async function init() {
   }
 }
 
-// ── Food list ──────────────────────────────────────────────────────────────────
-function buildFoodList() {
-  const cat = catFilter.value;
-  const visible = cat === 'All' ? NAMES : NAMES.filter(n => ITEMS[n].category === cat);
+// ── Dataset switching ────────────────────────────────────────────────────────────
+const DATASET_LOADERS = { producer: loadData, cpi: loadCpiData };
 
+async function setDataset(key) {
+  // Lazy-load on first use.
+  if (!DATASETS[key]) {
+    const loader = DATASET_LOADERS[key];
+    if (!loader) return;
+    loading.textContent = 'Loading dataset…';
+    loading.classList.remove('hidden');
+    try {
+      DATASETS[key] = await loader();
+    } catch (err) {
+      loading.textContent = 'Failed to load dataset.';
+      console.error(err);
+      return;
+    }
+    loading.classList.add('hidden');
+  }
+
+  const d = DATASETS[key];
+  if (!d) return;
+  dsKey = key;
+  ITEMS = d.items;
+  NAMES = d.names;
+  YEARS = d.years;
+
+  dsBtns.forEach(b => b.classList.toggle('active', b.dataset.dataset === key));
+  tabInflation.style.display = d.hasMonthly ? 'flex' : 'none';
+  catFilter.disabled = (key === 'cpi');     // CPI categories are the items themselves
+  if (key === 'cpi') catFilter.value = 'All';
+  if (footerInfo) footerInfo.textContent =
+    key === 'cpi' ? 'Source: Destatis · Index 2020=100' : 'Source: FAOSTAT · Unit: LCU/tonne';
+
+  // Re-range the sliders for this dataset's span.
+  const last = YEARS.length - 1;
+  slStart.max = last; slEnd.max = last; slTime.max = last;
+  startIdx = 0; endIdx = last; timeIdx = last;
+  slStart.value = 0; slEnd.value = last; slTime.value = last;
+  lblYearStart.textContent = YEARS[0];
+  lblYearEnd.textContent = YEARS[last];
+  lblTimeYear.textContent = YEARS[last];
+
+  // Default selection: first 8 producer items, or all 12 CPI categories.
+  sel.clear();
+  (key === 'cpi' ? NAMES : NAMES.slice(0, 8)).forEach(n => sel.add(n));
+  buildFoodList();
+  renderLegend();
+
+  // Inflation viz only exists for CPI; fall back to bars otherwise.
+  let target = activeViz;
+  if (!d.hasMonthly && target === 4) target = 1;
+  switchViz(target);
+}
+
+dsBtns.forEach(btn => {
+  btn.addEventListener('click', () => setDataset(btn.dataset.dataset));
+});
+
+// ── Food list ──────────────────────────────────────────────────────────────────
+function visibleNames() {
+  if (dsKey === 'cpi') return NAMES;
+  const cat = catFilter.value;
+  return cat === 'All' ? NAMES : NAMES.filter(n => ITEMS[n].category === cat);
+}
+
+function buildFoodList() {
   foodList.innerHTML = '';
-  visible.forEach(name => {
+  visibleNames().forEach(name => {
     const div = document.createElement('div');
     div.className = 'food-item' + (sel.has(name) ? ' selected' : '');
     div.innerHTML = `
@@ -76,25 +150,19 @@ function buildFoodList() {
   });
 }
 
-function selectFirst8() {
-  sel.clear();
-  NAMES.slice(0, 8).forEach(n => sel.add(n));
-  buildFoodList();
-  renderLegend();
-}
-
 btnSelectAll.addEventListener('click', () => {
-  const cat = catFilter.value;
-  const visible = cat === 'All' ? NAMES : NAMES.filter(n => ITEMS[n].category === cat);
-  visible.forEach(n => sel.add(n));
+  visibleNames().forEach(n => sel.add(n));
   buildFoodList();
   refreshViz();
   renderLegend();
 });
 
 btnFirst8.addEventListener('click', () => {
-  selectFirst8();
+  sel.clear();
+  NAMES.slice(0, 8).forEach(n => sel.add(n));
+  buildFoodList();
   refreshViz();
+  renderLegend();
 });
 
 btnClear.addEventListener('click', () => {
@@ -121,21 +189,21 @@ function renderLegend() {
 slStart.addEventListener('input', () => {
   startIdx = Number(slStart.value);
   if (startIdx >= endIdx) { startIdx = Math.max(0, endIdx - 1); slStart.value = startIdx; }
-  lblYearStart.textContent = YEARS_FULL[startIdx];
+  lblYearStart.textContent = YEARS[startIdx];
   refreshViz();
 });
 
 slEnd.addEventListener('input', () => {
   endIdx = Number(slEnd.value);
-  if (endIdx <= startIdx) { endIdx = Math.min(31, startIdx + 1); slEnd.value = endIdx; }
-  lblYearEnd.textContent = YEARS_FULL[endIdx];
+  if (endIdx <= startIdx) { endIdx = Math.min(YEARS.length - 1, startIdx + 1); slEnd.value = endIdx; }
+  lblYearEnd.textContent = YEARS[endIdx];
   refreshViz();
 });
 
 // ── Time slider (viz3 only) ────────────────────────────────────────────────────
 slTime.addEventListener('input', () => {
   timeIdx = Number(slTime.value);
-  lblTimeYear.textContent = YEARS_FULL[timeIdx];
+  lblTimeYear.textContent = YEARS[timeIdx];
   if (viz?.setYearIdx) viz.setYearIdx(timeIdx, selNames(), ITEMS);
 });
 
@@ -148,14 +216,15 @@ btnAnimate.addEventListener('click', () => {
   }
   animating = true;
   btnAnimate.innerHTML = '&#9646;&#9646;';
-  if (timeIdx >= 31) timeIdx = 0;
+  const last = YEARS.length - 1;
+  if (timeIdx >= last) timeIdx = 0;
 
   animTimer = setInterval(() => {
-    timeIdx = Math.min(31, timeIdx + 1);
+    timeIdx = Math.min(last, timeIdx + 1);
     slTime.value = timeIdx;
-    lblTimeYear.textContent = YEARS_FULL[timeIdx];
+    lblTimeYear.textContent = YEARS[timeIdx];
     if (viz?.setYearIdx) viz.setYearIdx(timeIdx, selNames(), ITEMS);
-    if (timeIdx >= 31) {
+    if (timeIdx >= last) {
       clearInterval(animTimer);
       animating = false;
       btnAnimate.innerHTML = '&#9654;';
@@ -165,36 +234,36 @@ btnAnimate.addEventListener('click', () => {
 
 // ── Viz switching ──────────────────────────────────────────────────────────────
 tabBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    tabBtns.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    switchViz(Number(btn.dataset.viz));
-  });
+  btn.addEventListener('click', () => switchViz(Number(btn.dataset.viz)));
 });
+
+function setActiveTabUI(n) {
+  tabBtns.forEach(b => b.classList.toggle('active', Number(b.dataset.viz) === n));
+  timeControl.style.display   = n === 3 ? 'flex' : 'none';
+  crisisControl.style.display = (n === 1 && dsKey === 'producer') ? 'flex' : 'none';
+  crisisBtns.forEach(b => {
+    b.classList.toggle('active', b.dataset.crisis === '');
+    b.style.removeProperty('--crisis-color');
+  });
+}
 
 function switchViz(n) {
   if (animating) { clearInterval(animTimer); animating = false; btnAnimate.innerHTML = '&#9654;'; }
-  if (viz) viz.destroy();
+  if (viz) viz.dispose();
   activeViz = n;
+  setActiveTabUI(n);
 
-  timeControl.style.display   = n === 3 ? 'flex' : 'none';
-  crisisControl.style.display = n === 1 ? 'flex' : 'none';
+  if (n === 1)      viz = new BarMatrixViz();
+  else if (n === 2) viz = new TerrainViz();
+  else if (n === 3) viz = new BubbleViz();
+  else              viz = new InflationViz();
 
-  // Reset crisis button state when leaving viz1
-  if (n !== 1) {
-    crisisBtns.forEach(b => b.classList.toggle('active', b.dataset.crisis === ''));
-    crisisBtns.forEach(b => b.style.removeProperty('--crisis-color'));
-  }
-
-  if (n === 1) viz = new BarMatrixViz(canvas, tooltip);
-  else if (n === 2) viz = new TerrainViz(canvas, tooltip);
-  else              viz = new BubbleViz(canvas, tooltip);
-
-  viz.init();
+  viz.build(viewer.renderer);
+  viewer.setActiveViz(viz);
   refreshViz();
 }
 
-// ── Crisis period buttons (viz1 only) ─────────────────────────────────────────
+// ── Crisis period buttons (producer viz1 only) ────────────────────────────────
 const CRISIS_COLORS = { eur: '#f4a261', covid: '#e63946' };
 
 crisisBtns.forEach(btn => {
@@ -219,9 +288,10 @@ function selNames() {
 function refreshViz() {
   if (!viz) return;
   const names = selNames();
-  const years = YEARS_FULL.slice(startIdx, endIdx + 1);
+  const years = YEARS.slice(startIdx, endIdx + 1);
   if (activeViz === 3) viz.update(names, ITEMS, timeIdx);
   else viz.update(names, ITEMS, years);
+  viewer?.refitVR();   // keep the VR tabletop hologram correctly sized
 }
 
 init();

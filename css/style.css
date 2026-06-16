@@ -100,6 +100,26 @@ body {
 }
 .sidebar-actions button:hover { background: var(--border); color: var(--text); }
 
+.dataset-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.ds-btn {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: none;
+  padding: 7px 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ds-btn:hover { color: var(--text); }
+.ds-btn.active { background: var(--accent); color: #fff; font-weight: 600; }
+.ds-btn + .ds-btn { border-left: 1px solid var(--border); }
+
 .food-list-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 #food-list { flex: 1; overflow-y: auto; margin-top: 4px; }
 #food-list::-webkit-scrollbar { width: 3px; }
@@ -238,6 +258,13 @@ input[type="range"]::-webkit-slider-thumb:hover { background: var(--accent-hover
   z-index: 10;
 }
 #loading.hidden { display: none; }
+
+/* ── WebXR "Enter VR" button (injected by three.js VRButton) ── */
+.vr-button {
+  z-index: 20 !important;
+  border-radius: 8px !important;
+  font-family: system-ui, sans-serif !important;
+}
 
 /* ── Tooltip ── */
 #tooltip {
