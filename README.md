@@ -140,12 +140,7 @@ df_frontal.csv                 – klassifizierter Datensatz (in data/)
 ```
 
 ## Report-Abgabe (PDF)
-
-Der vollständige Report liegt als PDF bei:
-**`EEG Analyse/output/EEG_Output.pdf`**
-
-Er enthält die farbcodierte Liniengrafik, den Zeitstreifen, das Tortendiagramm sowie die Kennzahlen-Tabelle.
-
+   Der Ausgabe der EEG Notebooks liegt in EEG Analyse/output/EEG_Output-main.pdf(haupt funktion) und EEG_Output.pdf(WebXR funktion)
 ## Interpretation der Test-Session
 
 Auswertung des frontalen Kanals über die ~56-sekündige Session (Werte aus `EEG_Output.pdf`):
