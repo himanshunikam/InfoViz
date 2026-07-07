@@ -110,13 +110,10 @@ producer-prices_deu.csv   – FAOSTAT-Erzeugerpreise
 
 Visualisiert wird eine **selbst aufgezeichnete EEG-Test-Session** (Elektroenzephalografie – Messung der elektrischen Hirnaktivität).
 
-- **Aufnahmegerät:** BioSignalsPlux (OpenSignals), 3 EEG-Kanäle, **Abtastrate 1000 Hz**, Auflösung 16 Bit.
 - **Aufnahmedatum:** 17.06.2026.
 - **Rohdaten:** `EEG Analyse/data/eeg_data.txt` (OpenSignals-Textformat) sowie die Original-Aufzeichnungen in `backup-eeg/` (`.h5` / `.txt`).
 - **Ausgewerteter Kanal:** der **frontale** Kanal (CH1).
 - **Session-Dauer:** ca. **56 Sekunden** (≈ 56.000 Messpunkte).
-
-Die Auswertung basiert methodisch auf einer **Studienarbeit von Fabio Scagliola** (siehe `09_studienarbeit.pdf`).
 
 ## Warum?
 
@@ -143,21 +140,25 @@ df_frontal.csv                 – klassifizierter Datensatz (in data/)
    Der Ausgabe der EEG Notebooks liegt in EEG Analyse/output/EEG_Output-main.pdf(haupt funktion) und EEG_Output.pdf(WebXR funktion)
 ## Interpretation der Test-Session
 
-Auswertung des frontalen Kanals über die ~56-sekündige Session (Werte aus `EEG_Output.pdf`):
+Die Aufnahme entstand, während die Testperson nacheinander fünf Aufgaben an der Web-Visualisierung bearbeitete. Grundlage der Deutung ist der Zeitstreifen `output/EEG_Liniengrafik_Streifen-main.png`.
 
-| Wellentyp | Anzahl | Anteil |
-|-----------|--------|--------|
-| Sonstige | 39.570 | **70,73 %** |
-| Alpha-Wellen | 10.436 | **18,65 %** |
-| Beta-Wellen | 5.944 | **10,62 %** |
+**Farbcode:** 🔵 Blau = Alpha (Entspannung / Ruhe) · 🔴 Rot = Beta (Konzentration / Anspannung) · ⚫ Grau = Sonstige (langsame Wellen & Artefakte wie Blinzeln/Bewegung).
 
-- **Median:** 33.063,49 µV  ·  **Mittelwert:** 32.820,56 µV
+**Task 1** — *bis x ≈ 450:*
+Der Abschnitt startet **alpha-betont** (viel Blau) – die Testperson liest sich zunächst entspannt ein. In der Mitte kippt es in eine **ausgeglichene, unruhigere Phase** (Alpha und Beta etwa gleichauf), passend zum Suchen und Umstellen der Auswahl. Gegen Ende steigt das **Alpha wieder deutlich an** (Beruhigung), während die roten Beta-Marker über den ganzen Abschnitt gestreut bleiben.
 
-**Interpretation:**
+**Task 2** — *x ≈ 470 – 590:*
+Überwiegend **ruhig und alpha-dominant** in der ersten Hälfte (viel Blau), dann ein **Anstieg der Beta-Aktivität in der zweiten Hälfte** – die Konzentration nimmt zum Ende hin zu, insgesamt aber ein entspannter Abschnitt.
 
-- Der große Anteil an **„Sonstige“ (≈ 71 %)** ist erwartbar: Er umfasst alle Frequenzen außerhalb des Alpha-/Beta-Bandes (langsame Delta-/Theta-Wellen) sowie **Bewegungs- und Muskelartefakte**. Bei einer frontalen Ableitung sind Augenblinzeln und Muskelanspannung eine typische, starke Artefaktquelle – der Zeitstreifen zeigt entsprechend über die gesamte Aufnahme verteilte dunkelgraue Bereiche.
-- Der **Alpha-Anteil (≈ 19 %)** deutet auf **Phasen der Entspannung / des wachen Ruhezustands** hin. Alpha-Wellen treten verstärkt bei geringer visueller Beanspruchung auf (z. B. mit geschlossenen Augen).
-- Der geringere **Beta-Anteil (≈ 11 %)** entspricht **kürzeren Phasen aktiver Konzentration/Anspannung**. Im Streifen erscheinen die roten Beta-Marker in Clustern – vermutlich Momente, in denen die Testperson aufmerksam oder angespannt war.
-- **Verhältnis Alpha zu Beta (ca. 1,75 : 1):** Über die Session überwog ein eher **entspannter Zustand** gegenüber konzentrierter Anspannung.
+**Task 3** — *x ≈ 590 – 690:*
+Beginnt **beta-lastig** (Rot leicht über Blau) – konzentrierter Einstieg. In der Mitte ein **kräftiger Alpha-Ausschlag** (kurze Entspannung), und am **Ende ein deutlicher Beta-Peak** (stärkste Anspannung des Abschnitts).
 
-**Einordnung / Grenzen:** Die Klassifikation beruht auf einem einfachen FFT-Schwellenwert-Verfahren auf einem einzelnen, geglätteten Frontalkanal und ist **nicht artefaktbereinigt**. Der hohe „Sonstige“-Anteil ist deshalb teils methodisch bedingt und sollte nicht als reiner „Ruhe-/Schlafanteil“ fehlinterpretiert werden. Für eine belastbarere Aussage wären eine Artefaktentfernung (z. B. ICA), mehrere Kanäle und eine längere, kontrolliert protokollierte Aufnahme (z. B. definierte Augen-auf-/Augen-zu-Phasen) nötig. Als **Machbarkeitsnachweis** zeigt die Test-Session jedoch plausibel, dass sich Alpha- und Beta-Aktivität aus dem Rohsignal extrahieren und anschaulich visualisieren lässt.
+**Task 4** — *x ≈ 690 – 860:*
+Der **entspannteste Abschnitt** insgesamt: durchgehend viel **Alpha** (hoher Blau-Anteil), besonders am Anfang. In der dritten Phase kurz ruhiger/graulastiger, danach wieder **Alpha mit erhöhtem Beta** zum Ende – flüssige Bearbeitung mit klaren Konzentrationsspitzen.
+
+**Task 5** — *x ≈ 890 – 1130:*
+Startet **ruhig und unauffällig** (wenig Alpha und Beta, viel Grau), baut sich dann auf und läuft auf einen **Beta-Peak am Ende** zu (steigende Anspannung zum Abschluss der Aufgabe).
+
+**Fazit:** Über alle Aufgaben überwiegt **Alpha gegenüber Beta** – die Session war insgesamt eher entspannt. Die **Beta-Spitzen häufen sich jeweils an den Enden der Aufgaben** (Ablesen/Antwort-Finden) sowie in Umstell-/Suchphasen, während sich das Signal beim ruhigen Lesen Richtung Alpha verschiebt.
+
+> **Hinweis:** Die Klassifikation beruht auf einem einfachen FFT-Schwellenwert-Verfahren auf einem einzelnen, geglätteten Frontalkanal und ist nicht artefaktbereinigt (der hohe Grau-Anteil enthält auch Blinzel-/Bewegungsartefakte). Die Deutung ist daher als plausible Tendenz, nicht als klinische Aussage zu verstehen.
