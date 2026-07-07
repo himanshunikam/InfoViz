@@ -161,4 +161,3 @@ Startet **ruhig und unauffällig** (wenig Alpha und Beta, viel Grau), baut sich 
 
 **Fazit:** Über alle Aufgaben überwiegt **Alpha gegenüber Beta** – die Session war insgesamt eher entspannt. Die **Beta-Spitzen häufen sich jeweils an den Enden der Aufgaben** (Ablesen/Antwort-Finden) sowie in Umstell-/Suchphasen, während sich das Signal beim ruhigen Lesen Richtung Alpha verschiebt.
 
-> **Hinweis:** Die Klassifikation beruht auf einem einfachen FFT-Schwellenwert-Verfahren auf einem einzelnen, geglätteten Frontalkanal und ist nicht artefaktbereinigt (der hohe Grau-Anteil enthält auch Blinzel-/Bewegungsartefakte). Die Deutung ist daher als plausible Tendenz, nicht als klinische Aussage zu verstehen.
