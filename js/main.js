@@ -108,9 +108,11 @@ async function setDataset(key) {
   lblYearEnd.textContent = YEARS[last];
   lblTimeYear.textContent = YEARS[last];
 
-  // Default selection: first 8 producer items, or all 12 CPI categories.
+  // Default selection: nothing for producer — the user picks a category first.
+  // CPI has no category filter, so all 12 CPI categories stay preselected.
   sel.clear();
-  (key === 'cpi' ? NAMES : NAMES.slice(0, 8)).forEach(n => sel.add(n));
+  if (key === 'cpi') NAMES.forEach(n => sel.add(n));
+  else catFilter.value = '';
   buildFoodList();
   renderLegend();
 
@@ -128,6 +130,7 @@ dsBtns.forEach(btn => {
 function visibleNames() {
   if (dsKey === 'cpi') return NAMES;
   const cat = catFilter.value;
+  if (!cat) return [];                       // no category chosen yet
   return cat === 'All' ? NAMES : NAMES.filter(n => ITEMS[n].category === cat);
 }
 
@@ -151,6 +154,7 @@ function buildFoodList() {
 }
 
 btnSelectAll.addEventListener('click', () => {
+  if (dsKey !== 'cpi' && !catFilter.value) catFilter.value = 'All';
   visibleNames().forEach(n => sel.add(n));
   buildFoodList();
   refreshViz();
@@ -158,6 +162,7 @@ btnSelectAll.addEventListener('click', () => {
 });
 
 btnFirst8.addEventListener('click', () => {
+  if (dsKey !== 'cpi' && !catFilter.value) catFilter.value = 'All';
   sel.clear();
   NAMES.slice(0, 8).forEach(n => sel.add(n));
   buildFoodList();
@@ -172,7 +177,14 @@ btnClear.addEventListener('click', () => {
   renderLegend();
 });
 
-catFilter.addEventListener('change', buildFoodList);
+catFilter.addEventListener('change', () => {
+  // Picking a category displays exactly that category's items.
+  sel.clear();
+  visibleNames().forEach(n => sel.add(n));
+  buildFoodList();
+  refreshViz();
+  renderLegend();
+});
 
 // ── Legend ─────────────────────────────────────────────────────────────────────
 function renderLegend() {

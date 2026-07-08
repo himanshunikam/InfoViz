@@ -13,9 +13,6 @@ Die Web-Visualisierung ist als statische Seite über **GitHub Pages** lauffähig
 
 - **Live-Link:** https://himanshunikam.github.io/InfoViz/
 
-> **Hinweis zur Aktivierung:** Falls die Seite noch nicht erreichbar ist, muss GitHub Pages einmalig aktiviert werden:
-> *Repository → Settings → Pages → Source: `Deploy from a branch` → Branch: `main` / Ordner: `/root` → Save.*
-> Nach ca. einer Minute ist die Seite unter obigem Link erreichbar.
 >
 > **Lokal starten:** Da die Anwendung Daten per `fetch` lädt und ES-Module nutzt, muss sie über einen lokalen Server laufen (nicht per Doppelklick auf `index.html`):
 > ```bash
@@ -73,7 +70,7 @@ Es stehen vier Visualisierungen zur Verfügung (Tabs oben in der Anwendung):
 Die Steuerung erfolgt über die **Seitenleiste** und die **Kontrollleiste**:
 
 - **Datensatz-Umschalter:** *Producer* ↔ *Consumer* (CPI wird erst bei Bedarf nachgeladen).
-- **Kategorie-Filter (Dropdown):** Einschränkung auf eine Warengruppe (z. B. nur „Meat“).
+- **Kategorie-Filter (Dropdown):** Einschränkung auf eine Warengruppe (z. B. nur „Meat“). Beim Start ist **keine Kategorie vorausgewählt** – erst die Auswahl einer Kategorie blendet deren Produkte ein (Ergebnis der EEG-Auswertung, s. Task 1 in Teil 2).
 - **Item-Liste:** Einzelne Produkte per Klick an-/abwählen. Schnellauswahl über die Buttons **All**, **Top 8** und **Clear**.
 - **Jahres-Bereich (Doppel-Slider):** Start- und Endjahr frei einstellen.
 - **Zeit-Slider + Play/Pause:** In „Bubble Orbs“ die Jahre animiert durchlaufen.
@@ -146,6 +143,8 @@ Die Aufnahme entstand, während die Testperson nacheinander fünf Aufgaben an de
 
 **Task 1** — *bis x ≈ 450:*
 Der Abschnitt startet **alpha-betont** (viel Blau) – die Testperson liest sich zunächst entspannt ein. In der Mitte kippt es in eine **ausgeglichene, unruhigere Phase** (Alpha und Beta etwa gleichauf), passend zum Suchen und Umstellen der Auswahl. Gegen Ende steigt das **Alpha wieder deutlich an** (Beruhigung), während die roten Beta-Marker über den ganzen Abschnitt gestreut bleiben.
+
+> **Erkenntnis & Fix aus Task 1:** Die erhöhte Beta-Aktivität (Rot = Anspannung) in Task 1 ließ sich auf ein UX-Problem zurückführen: Beim Öffnen der App war die Kategorie **„All“ vorausgewählt**, sodass bereits die ersten Produkte (Getreide wie Barley, Corn …) angezeigt wurden, obwohl die Testperson diese nie ausgewählt hatte – das sorgte beim Einstieg für Verwirrung und Suchstress. **Fix:** Die App startet jetzt **ohne vorausgewählte Kategorie** mit leerer Szene („Select a category…“); erst nach Klick auf eine Kategorie im Dropdown werden deren Produkte angezeigt und automatisch in die Visualisierung übernommen (`index.html`, `js/main.js`).
 
 **Task 2** — *x ≈ 470 – 590:*
 Überwiegend **ruhig und alpha-dominant** in der ersten Hälfte (viel Blau), dann ein **Anstieg der Beta-Aktivität in der zweiten Hälfte** – die Konzentration nimmt zum Ende hin zu, insgesamt aber ein entspannter Abschnitt.
